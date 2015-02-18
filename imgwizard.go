@@ -71,8 +71,6 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 
 	resultImage := getOrCreateImage(c)
 
-	rw.Header().Set("Content-Type", "image/jpg")
-	rw.Header().Set("Access-Control-Allow-Origin", "*")
 	rw.Write(resultImage)
 }
 
