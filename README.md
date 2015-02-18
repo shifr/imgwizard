@@ -29,7 +29,7 @@ http://<b>192.168.0.1:4444</b>/images/<b>rem</b>/<b>462x</b>/<b>media.google.com
 
   - You have to install [vips][vips] and requirements
   - ```go get github.com/shifr/imgwizard```
-  - ```export PATH=$PATH/$GOPATH/bin```
+  - ```export PATH=$PATH:$GOPATH/bin```
   - ```imgwizard```
 
 If you see "_Running on :8070_" than go to http://localhost:8070/images/rem/200x300/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
