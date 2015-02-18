@@ -150,5 +150,6 @@ func main() {
 	r := mux.NewRouter()
 	r.HandleFunc("/images/{storage:loc|rem}/{size:[0-9]*x[0-9]*}/{path:.+}", fetchImage).Methods("GET")
 
+	log.Println("ImgWizard started...")
 	http.ListenAndServe(":8070", r)
 }
