@@ -15,7 +15,6 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
 
 http://{server}/images/{storage}/{size}/{path_to_file}
 
-### Where: ###
   - _server_ - imgwizard server addr
   - _storage_ - <strong>loc</strong> (local FS) or <strong>rem</strong> (remote media)
   - _size_ - <strong>320x240</strong> or <strong>320x</strong> or <strong>x240</strong>
@@ -29,10 +28,14 @@ http://<b>192.168.0.1:4444</b>/images/<b>rem</b>/<b>462x</b>/<b>media.google.com
 
   - You have to install [vips][vips] and requirements
   - ```go get github.com/shifr/imgwizard```
-  - ```export PATH=$PATH:$GOPATH/bin```
-  - ```imgwizard```
+  - ```export PATH=$PATH:$GOPATH/bin``` if you haven't done it before
+  - ```imgwizard``` - run server
 
-If you see "_Running on :8070_" than go to http://localhost:8070/images/rem/200x300/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
+You will see "<b>ImgWizard started...</b>" 
+
+Check [imgwizard] work after server start 
+
+[imgwizard]: http://localhost:8070/images/rem/200x300/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
 
 [vips]: https://github.com/DAddYE/vips/
 
