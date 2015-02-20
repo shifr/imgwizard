@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -26,7 +25,6 @@ type Context struct {
 
 type Settings struct {
 	ListenAddr    string
-	Quality       int
 	CacheDir      string
 	Scheme        string
 	Local404Thumb string
@@ -51,20 +49,23 @@ var (
 // and from command-line
 func (s *Settings) loadSettings() {
 
+	s.ListenAddr = ":8070"
+	s.CacheDir = "/tmp/imgwizard"
+	s.Scheme = "http"
+	s.Local404Thumb = "/tmp/404.jpg"
+	s.AllowedSizes = nil
+	s.AllowedMedia = nil
+
 	//defaults for vips
+	s.Options.Crop = true
+	s.Options.Enlarge = true
+	s.Options.Quality = 80
 	s.Options.Extend = vips.EXTEND_WHITE
 	s.Options.Interpolator = vips.BILINEAR
 	s.Options.Gravity = vips.CENTRE
 
 	var sizes = "[0-9]*x[0-9]*"
 	var medias = ""
-
-	file, _ := ioutil.ReadFile("settings.json")
-
-	err := json.Unmarshal(file, &s)
-	if err != nil {
-		log.Panic("Can't unmarshal settings, reason - ", err)
-	}
 
 	if *listenAddr != "" {
 		s.ListenAddr = *listenAddr
@@ -83,7 +84,7 @@ func (s *Settings) loadSettings() {
 	}
 
 	if *quality != 0 {
-		s.Quality = *quality
+		s.Options.Quality = *quality
 	}
 
 	if len(s.AllowedSizes) > 0 {
