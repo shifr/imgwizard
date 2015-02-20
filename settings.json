@@ -1,0 +1,13 @@
+{
+    "Quality": 80,
+    "CacheDir": "/tmp",
+    "Scheme": "http",
+    "Local404Thumb": "/tmp/404.jpg",
+    "AllowedSizes": ["320x240", "462x", "1200x"],
+    "AllowedMedia": ["media.test.com", "another.media.com"],
+    "Options": {
+        "Crop": true,
+        "Enlarge": true
+    }
+}
+

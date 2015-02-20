@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -14,14 +15,6 @@ import (
 	"github.com/gorilla/mux"
 )
 
-const (
-	LOCAL_404_THUMB = "/tmp/default.jpg"
-	SCHEME          = "http"
-	CACHE_DIR       = "/tmp"
-)
-
-var options vips.Options
-
 type Context struct {
 	Path      string
 	CachePath string
@@ -30,52 +23,75 @@ type Context struct {
 	Height    int
 }
 
-func (c *Context) makeCachePath() {
+type Settings struct {
+	Quality       int
+	CacheDir      string
+	Scheme        string
+	Local404Thumb string
+	AllowedSizes  []string
+	AllowedMedia  []string
+	UrlTemplate   string
+
+	Context Context
+	Options vips.Options
+}
+
+var settings Settings
+
+func (s *Settings) loadSettings() {
+
+	s.Options.Extend = vips.EXTEND_WHITE
+	s.Options.Interpolator = vips.BILINEAR
+	s.Options.Gravity = vips.CENTRE
+
+	file, _ := ioutil.ReadFile("settings.json")
+
+	err := json.Unmarshal(file, &s)
+	if err != nil {
+		log.Panic("Can't unmarshal settings, reason - ", err)
+	}
+
+	sizes := strings.Join(s.AllowedSizes, "|")
+	s.UrlTemplate = fmt.Sprintf(
+		"/images/{storage:loc|rem}/{size:%s}/{path:.+}", sizes)
+}
+
+func (s *Settings) makeCachePath() {
 	var subPath string
-	pathParts := strings.Split(c.Path, "/")
+	pathParts := strings.Split(s.Context.Path, "/")
 	lastIndex := len(pathParts) - 1
 	imageData := strings.Split(pathParts[lastIndex], ".")
 	imageName, imageFormat := imageData[0], imageData[1]
-	cacheImageName := fmt.Sprintf("%s_%dx%d.%s", imageName, c.Width, c.Height, imageFormat)
+	cacheImageName := fmt.Sprintf(
+		"%s_%dx%d.%s", imageName, s.Options.Width, s.Options.Height, imageFormat)
 
-	switch c.Storage {
+	switch s.Context.Storage {
 	case "loc":
 		subPath = strings.Join(pathParts[:lastIndex], "/")
 	case "rem":
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
 
-	c.CachePath = fmt.Sprintf("%s/%s/%s", CACHE_DIR, subPath, cacheImageName)
-}
-
-func init() {
-	options = vips.Options{
-		Crop:         true,
-		Enlarge:      true,
-		Extend:       vips.EXTEND_WHITE,
-		Interpolator: vips.BILINEAR,
-		Gravity:      vips.CENTRE,
-		Quality:      80,
-	}
+	s.Context.CachePath = fmt.Sprintf(
+		"%s/%s/%s", s.CacheDir, subPath, cacheImageName)
 }
 
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	params := mux.Vars(req)
 	sizes := strings.Split(params["size"], "x")
 
-	c := new(Context)
-	c.Storage = params["storage"]
-	c.Path = params["path"]
-	c.Width, _ = strconv.Atoi(sizes[0])
-	c.Height, _ = strconv.Atoi(sizes[1])
+	settings.Context.Storage = params["storage"]
+	settings.Context.Path = params["path"]
+	settings.Options.Width, _ = strconv.Atoi(sizes[0])
+	settings.Options.Height, _ = strconv.Atoi(sizes[1])
 
-	resultImage := getOrCreateImage(c)
+	resultImage := getOrCreateImage()
 
 	rw.Write(resultImage)
 }
 
-func getOrCreateImage(c *Context) []byte {
-	c.makeCachePath()
+func getOrCreateImage() []byte {
+	settings.makeCachePath()
 
 	var file *os.File
 	var info os.FileInfo
@@ -85,7 +101,7 @@ func getOrCreateImage(c *Context) []byte {
 
 	defer file.Close()
 
-	if file, err = os.Open(c.CachePath); err == nil {
+	if file, err = os.Open(settings.Context.CachePath); err == nil {
 
 		info, _ = file.Stat()
 		image = make([]byte, info.Size())
@@ -98,12 +114,12 @@ func getOrCreateImage(c *Context) []byte {
 		return image
 	}
 
-	switch c.Storage {
+	switch settings.Context.Storage {
 	case "loc":
-		file, err = os.Open(path.Join("/", c.Path))
+		file, err = os.Open(path.Join("/", settings.Context.Path))
 		if err != nil {
 			log.Println("Can't read orig file, reason - ", err)
-			file, _ = os.Open(LOCAL_404_THUMB)
+			file, _ = os.Open(settings.Local404Thumb)
 		}
 
 		info, _ = file.Stat()
@@ -114,7 +130,7 @@ func getOrCreateImage(c *Context) []byte {
 			log.Println("Can't read file to image, reason - ", err)
 		}
 	case "rem":
-		imgUrl := fmt.Sprintf("%s://%s", SCHEME, c.Path)
+		imgUrl := fmt.Sprintf("%s://%s", settings.Scheme, settings.Context.Path)
 
 		resp, err = http.Get(imgUrl)
 		if err != nil {
@@ -125,18 +141,17 @@ func getOrCreateImage(c *Context) []byte {
 		image, _ = ioutil.ReadAll(resp.Body)
 	}
 
-	options.Width = c.Width
-	options.Height = c.Height
-
-	buf, err := vips.Resize(image, options)
+	buf, err := vips.Resize(image, settings.Options)
 	if err != nil {
 		log.Println("Can't resize image, reason - ", err)
 	}
-	err = os.MkdirAll(path.Dir(c.CachePath), 0777)
+
+	err = os.MkdirAll(path.Dir(settings.Context.CachePath), 0777)
 	if err != nil {
 		log.Println("Can't make dir, reason - ", err)
 	}
-	err = ioutil.WriteFile(c.CachePath, buf, 0666)
+
+	err = ioutil.WriteFile(settings.Context.CachePath, buf, 0666)
 	if err != nil {
 		log.Println("Can't write file, reason - ", err)
 	}
@@ -144,9 +159,13 @@ func getOrCreateImage(c *Context) []byte {
 	return buf
 }
 
+func init() {
+	settings.loadSettings()
+}
+
 func main() {
 	r := mux.NewRouter()
-	r.HandleFunc("/images/{storage:loc|rem}/{size:[0-9]*x[0-9]*}/{path:.+}", fetchImage).Methods("GET")
+	r.HandleFunc(settings.UrlTemplate, fetchImage).Methods("GET")
 
 	log.Println("ImgWizard started...")
 	http.ListenAndServe(":8070", r)
