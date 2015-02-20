@@ -35,7 +35,7 @@ You will see "<b>ImgWizard started...</b>"
 
 Check [imgwizard] work after server start 
 
-[imgwizard]: http://localhost:8070/images/rem/200x300/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
+[imgwizard]: http://localhost:8070/images/rem/320x240/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
 
 [vips]: https://github.com/DAddYE/vips/
 
