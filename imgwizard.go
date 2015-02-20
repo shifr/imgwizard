@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -24,6 +25,7 @@ type Context struct {
 }
 
 type Settings struct {
+	ListenAddr    string
 	Quality       int
 	CacheDir      string
 	Scheme        string
@@ -36,13 +38,26 @@ type Settings struct {
 	Options vips.Options
 }
 
-var settings Settings
+var (
+	settings     Settings
+	listenAddr   = flag.String("l", "", "Address to listen on")
+	allowedMedia = flag.String("m", "", "comma separated list of allowed media")
+	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
+	cacheDir     = flag.String("cd", "", "directory for cached files")
+	quality      = flag.Int("q", 0, "image quality after resize")
+)
 
+// loadSettings loads settings from settings.json
+// and from command-line
 func (s *Settings) loadSettings() {
 
+	//defaults for vips
 	s.Options.Extend = vips.EXTEND_WHITE
 	s.Options.Interpolator = vips.BILINEAR
 	s.Options.Gravity = vips.CENTRE
+
+	var sizes = "[0-9]*x[0-9]*"
+	var medias = ""
 
 	file, _ := ioutil.ReadFile("settings.json")
 
@@ -51,13 +66,42 @@ func (s *Settings) loadSettings() {
 		log.Panic("Can't unmarshal settings, reason - ", err)
 	}
 
-	sizes := strings.Join(s.AllowedSizes, "|")
+	if *listenAddr != "" {
+		s.ListenAddr = *listenAddr
+	}
+
+	if *allowedMedia != "" {
+		s.AllowedMedia = strings.Split(*allowedMedia, ",")
+	}
+
+	if *allowedSizes != "" {
+		s.AllowedSizes = strings.Split(*allowedSizes, ",")
+	}
+
+	if *cacheDir != "" {
+		s.CacheDir = *cacheDir
+	}
+
+	if *quality != 0 {
+		s.Quality = *quality
+	}
+
+	if len(s.AllowedSizes) > 0 {
+		sizes = strings.Join(s.AllowedSizes, "|")
+	}
+
+	if len(s.AllowedMedia) > 0 {
+		medias = strings.Join(s.AllowedMedia, "|")
+	}
+
 	s.UrlTemplate = fmt.Sprintf(
-		"/images/{storage:loc|rem}/{size:%s}/{path:.+}", sizes)
+		"/images/{storage:loc|rem}/{size:%s}/{path:%s.+}", sizes, medias)
 }
 
+// makeCachePath generates cache path from resized image
 func (s *Settings) makeCachePath() {
 	var subPath string
+
 	pathParts := strings.Split(s.Context.Path, "/")
 	lastIndex := len(pathParts) - 1
 	imageData := strings.Split(pathParts[lastIndex], ".")
@@ -76,20 +120,8 @@ func (s *Settings) makeCachePath() {
 		"%s/%s/%s", s.CacheDir, subPath, cacheImageName)
 }
 
-func fetchImage(rw http.ResponseWriter, req *http.Request) {
-	params := mux.Vars(req)
-	sizes := strings.Split(params["size"], "x")
-
-	settings.Context.Storage = params["storage"]
-	settings.Context.Path = params["path"]
-	settings.Options.Width, _ = strconv.Atoi(sizes[0])
-	settings.Options.Height, _ = strconv.Atoi(sizes[1])
-
-	resultImage := getOrCreateImage()
-
-	rw.Write(resultImage)
-}
-
+// getOrCreateImage check cache path for requested image
+// if image doesn't exist - creates it
 func getOrCreateImage() []byte {
 	settings.makeCachePath()
 
@@ -119,7 +151,10 @@ func getOrCreateImage() []byte {
 		file, err = os.Open(path.Join("/", settings.Context.Path))
 		if err != nil {
 			log.Println("Can't read orig file, reason - ", err)
-			file, _ = os.Open(settings.Local404Thumb)
+			file, err = os.Open(settings.Local404Thumb)
+			if err != nil {
+				log.Println(err, "Please, set default 404 image")
+			}
 		}
 
 		info, _ = file.Stat()
@@ -129,6 +164,7 @@ func getOrCreateImage() []byte {
 		if err != nil {
 			log.Println("Can't read file to image, reason - ", err)
 		}
+
 	case "rem":
 		imgUrl := fmt.Sprintf("%s://%s", settings.Scheme, settings.Context.Path)
 
@@ -159,7 +195,22 @@ func getOrCreateImage() []byte {
 	return buf
 }
 
+func fetchImage(rw http.ResponseWriter, req *http.Request) {
+	params := mux.Vars(req)
+	sizes := strings.Split(params["size"], "x")
+
+	settings.Context.Storage = params["storage"]
+	settings.Context.Path = params["path"]
+	settings.Options.Width, _ = strconv.Atoi(sizes[0])
+	settings.Options.Height, _ = strconv.Atoi(sizes[1])
+
+	resultImage := getOrCreateImage()
+
+	rw.Write(resultImage)
+}
+
 func init() {
+	flag.Parse()
 	settings.loadSettings()
 }
 
@@ -168,5 +219,5 @@ func main() {
 	r.HandleFunc(settings.UrlTemplate, fetchImage).Methods("GET")
 
 	log.Println("ImgWizard started...")
-	http.ListenAndServe(":8070", r)
+	http.ListenAndServe(settings.ListenAddr, r)
 }
