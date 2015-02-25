@@ -124,7 +124,8 @@ func (s *Settings) makeCachePath() {
 // getOrCreateImage check cache path for requested image
 // if image doesn't exist - creates it
 func getOrCreateImage() []byte {
-	settings.makeCachePath()
+	sett := settings
+	sett.makeCachePath()
 
 	var file *os.File
 	var info os.FileInfo
@@ -134,7 +135,7 @@ func getOrCreateImage() []byte {
 
 	defer file.Close()
 
-	if file, err = os.Open(settings.Context.CachePath); err == nil {
+	if file, err = os.Open(sett.Context.CachePath); err == nil {
 
 		info, _ = file.Stat()
 		image = make([]byte, info.Size())
@@ -147,12 +148,12 @@ func getOrCreateImage() []byte {
 		return image
 	}
 
-	switch settings.Context.Storage {
+	switch sett.Context.Storage {
 	case "loc":
-		file, err = os.Open(path.Join("/", settings.Context.Path))
+		file, err = os.Open(path.Join("/", sett.Context.Path))
 		if err != nil {
 			log.Println("Can't read orig file, reason - ", err)
-			file, err = os.Open(settings.Local404Thumb)
+			file, err = os.Open(sett.Local404Thumb)
 			if err != nil {
 				log.Println(err, "Please, set default 404 image")
 			}
@@ -167,7 +168,7 @@ func getOrCreateImage() []byte {
 		}
 
 	case "rem":
-		imgUrl := fmt.Sprintf("%s://%s", settings.Scheme, settings.Context.Path)
+		imgUrl := fmt.Sprintf("%s://%s", sett.Scheme, sett.Context.Path)
 
 		resp, err = http.Get(imgUrl)
 		if err != nil {
@@ -178,17 +179,17 @@ func getOrCreateImage() []byte {
 		image, _ = ioutil.ReadAll(resp.Body)
 	}
 
-	buf, err := vips.Resize(image, settings.Options)
+	buf, err := vips.Resize(image, sett.Options)
 	if err != nil {
 		log.Println("Can't resize image, reason - ", err)
 	}
 
-	err = os.MkdirAll(path.Dir(settings.Context.CachePath), 0777)
+	err = os.MkdirAll(path.Dir(sett.Context.CachePath), 0777)
 	if err != nil {
 		log.Println("Can't make dir, reason - ", err)
 	}
 
-	err = ioutil.WriteFile(settings.Context.CachePath, buf, 0666)
+	err = ioutil.WriteFile(sett.Context.CachePath, buf, 0666)
 	if err != nil {
 		log.Println("Can't write file, reason - ", err)
 	}
