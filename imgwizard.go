@@ -41,7 +41,7 @@ var (
 	listenAddr   = flag.String("l", "", "Address to listen on")
 	allowedMedia = flag.String("m", "", "comma separated list of allowed media")
 	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir     = flag.String("cd", "", "directory for cached files")
+	cacheDir     = flag.String("c", "", "directory for cached files")
 	quality      = flag.Int("q", 0, "image quality after resize")
 )
 
