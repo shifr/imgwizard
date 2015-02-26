@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"imgwizard/cache"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/shifr/imgwizard/cache"
 
 	"github.com/daddye/vips"
 	"github.com/gorilla/mux"
