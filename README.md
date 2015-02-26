@@ -15,29 +15,55 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
 
 http://{server}/images/{storage}/{size}/{path_to_file}
 
-  - _server_ - imgwizard server addr
-  - _storage_ - <strong>loc</strong> (local FS) or <strong>rem</strong> (remote media)
-  - _size_ - <strong>320x240</strong> or <strong>320x</strong> or <strong>x240</strong>
-  - _path_to_file_ - path to file :)
+  - <b>server</b> - imgwizard server addr
+  - <b>storage</b> - "loc" (local file system) or "rem" (remote media)
+  - <b>size</b> - "320x240" or "320x" or "x240"
+  - <b>path_to_file</b> - path to original file (without "http://")
 
-### Example: ###
+##### Example: #####
 
 http://<b>192.168.0.1:4444</b>/images/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>
 
-# How to install?
+# How to install? #
 
-  - You have to install [vips][vips] and requirements
+### Installing libvips ###
+
+VIPS is a free image processing system. Compared to similar libraries, VIPS is fast and does not need much memory, see the [Speed and Memory Use][speed] page. As well as JPEG, TIFF, PNG and WebP images, it also supports scientific formats like FITS, OpenEXR, Matlab, Analyze, PFM, Radiance, OpenSlide and DICOM (via libMagick). (&copy; [vips wiki][libvips])
+
+##### Mac OS #####
+```$ brew install vips```
+
+##### Debian based #####
+```$ sudo apt-get install libvips-dev```
+
+##### RedHat #####
+Check [this][centos]
+
+### Installing imgwizard ###
   - ```go get github.com/shifr/imgwizard```
   - ```export PATH=$PATH:$GOPATH/bin``` if you haven't done it before
-  - ```imgwizard``` - run server
+  
+### Running imgwizard ###
+  - ```imgwizard``` - run server without restrictions
 
 You will see "<b>ImgWizard started...</b>" 
 
 Check [imgwizard] work after server start 
 
 [imgwizard]: http://localhost:8070/images/rem/320x240/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
+[centos]: http://astonj.com/tech/how-to-install-vips-on-centos-libvips/
+[libvips]: http://www.vips.ecs.soton.ac.uk/index.php?title=VIPS
+[speed]: http://www.vips.ecs.soton.ac.uk/index.php?title=Speed_and_Memory_Use
 
-[vips]: https://github.com/DAddYE/vips/
+# Parameters on start? #
+```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -m media1.com,media2.com -s 100x100,480x,x200 -q 80```
 
-# Plans?
+  - <b>-l</b>: Address to listen on (default - "localhost:8070")
+  - <b>-c</b>: directory for cached files (default - "/tmp/imgwizard")
+  - <b>-m</b>: comma separated list of allowed media (default - all enabled)
+  - <b>-s</b>: comma separated list of allowed sizes (default - all enabled)
+  - <b>-q</b>: resized image quality (default - 80)
+
+
+# Plans? #
 Yes, a lot.
