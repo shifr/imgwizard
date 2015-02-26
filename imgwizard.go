@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"imgwizard/cache"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -121,62 +122,75 @@ func (s *Settings) makeCachePath() {
 		"%s/%s/%s", s.CacheDir, subPath, cacheImageName)
 }
 
+// getLocalImage fetches original image from file system
+func getLocalImage(s *Settings) ([]byte, error) {
+	var image []byte
+
+	file, err := os.Open(path.Join("/", s.Context.Path))
+	if err != nil {
+
+		file, err = os.Open(s.Local404Thumb)
+		if err != nil {
+			return image, err
+		}
+	}
+
+	info, _ := file.Stat()
+	image = make([]byte, info.Size())
+
+	_, err = file.Read(image)
+	if err != nil {
+		return image, err
+	}
+
+	return image, nil
+}
+
+// getRemoteImage fetches original image by http url
+func getRemoteImage(url string) ([]byte, error) {
+	var image []byte
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return image, err
+	}
+	defer resp.Body.Close()
+
+	image, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return image, err
+	}
+
+	return image, nil
+}
+
 // getOrCreateImage check cache path for requested image
 // if image doesn't exist - creates it
 func getOrCreateImage() []byte {
 	sett := settings
 	sett.makeCachePath()
 
-	var file *os.File
-	var info os.FileInfo
+	var c *cache.Cache
 	var image []byte
-	var resp *http.Response
 	var err error
 
-	defer file.Close()
-
-	if file, err = os.Open(sett.Context.CachePath); err == nil {
-
-		info, _ = file.Stat()
-		image = make([]byte, info.Size())
-
-		_, err = file.Read(image)
-		if err != nil {
-			log.Println("Can't read cached file, reason - ", err)
-		}
-
+	if image, err = c.Get(sett.Context.CachePath); err == nil {
 		return image
 	}
 
 	switch sett.Context.Storage {
 	case "loc":
-		file, err = os.Open(path.Join("/", sett.Context.Path))
+		image, err = getLocalImage(&sett)
 		if err != nil {
-			log.Println("Can't read orig file, reason - ", err)
-			file, err = os.Open(sett.Local404Thumb)
-			if err != nil {
-				log.Println(err, "Please, set default 404 image")
-			}
-		}
-
-		info, _ = file.Stat()
-		image = make([]byte, info.Size())
-
-		_, err = file.Read(image)
-		if err != nil {
-			log.Println("Can't read file to image, reason - ", err)
+			log.Println("Can't get orig local file, reason - ", err)
 		}
 
 	case "rem":
 		imgUrl := fmt.Sprintf("%s://%s", sett.Scheme, sett.Context.Path)
-
-		resp, err = http.Get(imgUrl)
+		image, err = getRemoteImage(imgUrl)
 		if err != nil {
-			log.Println("Can't fetch image from url, reason - ", err)
+			log.Println("Can't get orig remote file, reason - ", err)
 		}
-		defer resp.Body.Close()
-
-		image, _ = ioutil.ReadAll(resp.Body)
 	}
 
 	buf, err := vips.Resize(image, sett.Options)
@@ -184,14 +198,9 @@ func getOrCreateImage() []byte {
 		log.Println("Can't resize image, reason - ", err)
 	}
 
-	err = os.MkdirAll(path.Dir(sett.Context.CachePath), 0777)
+	err = c.Set(sett.Context.CachePath, buf)
 	if err != nil {
-		log.Println("Can't make dir, reason - ", err)
-	}
-
-	err = ioutil.WriteFile(sett.Context.CachePath, buf, 0666)
-	if err != nil {
-		log.Println("Can't write file, reason - ", err)
+		log.Println("Can't set cache, reason - ", err)
 	}
 
 	return buf
