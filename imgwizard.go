@@ -38,6 +38,8 @@ type Settings struct {
 	Options vips.Options
 }
 
+const DEFAULT_CACHE_DIR = "/tmp/imgwizard"
+
 var (
 	settings     Settings
 	listenAddr   = flag.String("l", "", "Address to listen on")
@@ -52,7 +54,7 @@ var (
 func (s *Settings) loadSettings() {
 
 	s.ListenAddr = ":8070"
-	s.CacheDir = "/tmp/imgwizard"
+	s.CacheDir = DEFAULT_CACHE_DIR
 	s.Scheme = "http"
 	s.Local404Thumb = "/tmp/404.jpg"
 	s.AllowedSizes = nil
