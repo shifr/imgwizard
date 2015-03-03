@@ -13,8 +13,8 @@ import (
 
 	"github.com/shifr/imgwizard/cache"
 
-	"github.com/daddye/vips"
 	"github.com/gorilla/mux"
+	"github.com/shifr/vips"
 )
 
 type Context struct {
