@@ -42,10 +42,11 @@ const DEFAULT_CACHE_DIR = "/tmp/imgwizard"
 
 var (
 	settings     Settings
-	listenAddr   = flag.String("l", "", "Address to listen on")
+	listenAddr   = flag.String("l", ":8070", "Address to listen on")
 	allowedMedia = flag.String("m", "", "comma separated list of allowed media")
 	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
 	cacheDir     = flag.String("c", "", "directory for cached files")
+	mark         = flag.String("mark", "images", "Mark for nginx")
 	quality      = flag.Int("q", 0, "image quality after resize")
 )
 
@@ -53,7 +54,6 @@ var (
 // and from command-line
 func (s *Settings) loadSettings() {
 
-	s.ListenAddr = ":8070"
 	s.CacheDir = DEFAULT_CACHE_DIR
 	s.Scheme = "http"
 	s.Local404Thumb = "/tmp/404.jpg"
@@ -70,10 +70,9 @@ func (s *Settings) loadSettings() {
 
 	var sizes = "[0-9]*x[0-9]*"
 	var medias = ""
+	var proxyMark = *mark
 
-	if *listenAddr != "" {
-		s.ListenAddr = *listenAddr
-	}
+	s.ListenAddr = *listenAddr
 
 	if *allowedMedia != "" {
 		s.AllowedMedia = strings.Split(*allowedMedia, ",")
@@ -100,7 +99,7 @@ func (s *Settings) loadSettings() {
 	}
 
 	s.UrlTemplate = fmt.Sprintf(
-		"/images/{storage:loc|rem}/{size:%s}/{path:%s.+}", sizes, medias)
+		"/{mark:%s}/{storage:loc|rem}/{size:%s}/{path:%s.+}", proxyMark, sizes, medias)
 }
 
 // makeCachePath generates cache path from resized image
