@@ -42,17 +42,17 @@ type Settings struct {
 const (
 	DEFAULT_CACHE_DIR = "/tmp/imgwizard"
 	WEBP_HEADER       = "image/webp"
-	GIF_FORMAT        = "gif"
 )
 
 var (
-	settings     Settings
-	listenAddr   = flag.String("l", "127.0.0.1:8070", "Address to listen on")
-	allowedMedia = flag.String("m", "", "comma separated list of allowed media")
-	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir     = flag.String("c", "", "directory for cached files")
-	mark         = flag.String("mark", "images", "Mark for nginx")
-	quality      = flag.Int("q", 0, "image quality after resize")
+	settings         Settings
+	supportedFormats = []string{"jpg", "jpeg", "png"}
+	listenAddr       = flag.String("l", "127.0.0.1:8070", "Address to listen on")
+	allowedMedia     = flag.String("m", "", "comma separated list of allowed media")
+	allowedSizes     = flag.String("s", "", "comma separated list of allowed sizes")
+	cacheDir         = flag.String("c", "", "directory for cached files")
+	mark             = flag.String("mark", "images", "Mark for nginx")
+	quality          = flag.Int("q", 0, "image quality after resize")
 )
 
 // loadSettings loads settings from settings.json
@@ -115,7 +115,7 @@ func (s *Settings) makeCachePath() {
 	pathParts := strings.Split(s.Context.Path, "/")
 	lastIndex := len(pathParts) - 1
 	imageData := strings.Split(pathParts[lastIndex], ".")
-	imageName, imageFormat := imageData[0], imageData[1]
+	imageName, imageFormat := imageData[0], strings.ToLower(imageData[1])
 
 	if s.Options.Webp {
 		cacheImageName = fmt.Sprintf(
@@ -183,8 +183,6 @@ func getOrCreateImage() []byte {
 	sett := settings
 	sett.makeCachePath()
 
-	log.Println(sett.Context.Format)
-
 	var c *cache.Cache
 	var image []byte
 	var err error
@@ -208,6 +206,14 @@ func getOrCreateImage() []byte {
 		}
 	}
 
+	if !stringIsExists(sett.Context.Format, supportedFormats) {
+		err = c.Set(sett.Context.CachePath, image)
+		if err != nil {
+			log.Println("Can't set cache, reason - ", err)
+		}
+		return image
+	}
+
 	buf, err := vips.Resize(image, sett.Options)
 	if err != nil {
 		log.Println("Can't resize image, reason - ", err)
@@ -221,16 +227,19 @@ func getOrCreateImage() []byte {
 	return buf
 }
 
+func stringIsExists(str string, list []string) bool {
+	for _, el := range list {
+		if el == str {
+			return true
+		}
+	}
+	return false
+}
+
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	acceptedTypes := strings.Split(req.Header["Accept"][0], ",")
 
-	settings.Options.Webp = false
-	for _, ctype := range acceptedTypes {
-		if ctype == WEBP_HEADER {
-			settings.Options.Webp = true
-		}
-	}
-
+	settings.Options.Webp = stringIsExists(WEBP_HEADER, acceptedTypes)
 	params := mux.Vars(req)
 	sizes := strings.Split(params["size"], "x")
 
