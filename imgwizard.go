@@ -19,6 +19,7 @@ import (
 
 type Context struct {
 	Path      string
+	Format    string
 	CachePath string
 	Storage   string
 	Width     int
@@ -38,11 +39,15 @@ type Settings struct {
 	Options vips.Options
 }
 
-const DEFAULT_CACHE_DIR = "/tmp/imgwizard"
+const (
+	DEFAULT_CACHE_DIR = "/tmp/imgwizard"
+	WEBP_HEADER       = "image/webp"
+	GIF_FORMAT        = "gif"
+)
 
 var (
 	settings     Settings
-	listenAddr   = flag.String("l", ":8070", "Address to listen on")
+	listenAddr   = flag.String("l", "127.0.0.1:8070", "Address to listen on")
 	allowedMedia = flag.String("m", "", "comma separated list of allowed media")
 	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
 	cacheDir     = flag.String("c", "", "directory for cached files")
@@ -105,13 +110,20 @@ func (s *Settings) loadSettings() {
 // makeCachePath generates cache path from resized image
 func (s *Settings) makeCachePath() {
 	var subPath string
+	var cacheImageName string
 
 	pathParts := strings.Split(s.Context.Path, "/")
 	lastIndex := len(pathParts) - 1
 	imageData := strings.Split(pathParts[lastIndex], ".")
 	imageName, imageFormat := imageData[0], imageData[1]
-	cacheImageName := fmt.Sprintf(
-		"%s_%dx%d.%s", imageName, s.Options.Width, s.Options.Height, imageFormat)
+
+	if s.Options.Webp {
+		cacheImageName = fmt.Sprintf(
+			"%s_%dx%d_webp_.%s", imageName, s.Options.Width, s.Options.Height, imageFormat)
+	} else {
+		cacheImageName = fmt.Sprintf(
+			"%s_%dx%d.%s", imageName, s.Options.Width, s.Options.Height, imageFormat)
+	}
 
 	switch s.Context.Storage {
 	case "loc":
@@ -119,7 +131,7 @@ func (s *Settings) makeCachePath() {
 	case "rem":
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
-
+	s.Context.Format = imageFormat
 	s.Context.CachePath = fmt.Sprintf(
 		"%s/%s/%s", s.CacheDir, subPath, cacheImageName)
 }
@@ -130,7 +142,6 @@ func getLocalImage(s *Settings) ([]byte, error) {
 
 	file, err := os.Open(path.Join("/", s.Context.Path))
 	if err != nil {
-
 		file, err = os.Open(s.Local404Thumb)
 		if err != nil {
 			return image, err
@@ -172,6 +183,8 @@ func getOrCreateImage() []byte {
 	sett := settings
 	sett.makeCachePath()
 
+	log.Println(sett.Context.Format)
+
 	var c *cache.Cache
 	var image []byte
 	var err error
@@ -209,6 +222,15 @@ func getOrCreateImage() []byte {
 }
 
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
+	acceptedTypes := strings.Split(req.Header["Accept"][0], ",")
+
+	settings.Options.Webp = false
+	for _, ctype := range acceptedTypes {
+		if ctype == WEBP_HEADER {
+			settings.Options.Webp = true
+		}
+	}
+
 	params := mux.Vars(req)
 	sizes := strings.Split(params["size"], "x")
 
@@ -222,15 +244,13 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	rw.Write(resultImage)
 }
 
-func init() {
+func main() {
 	flag.Parse()
 	settings.loadSettings()
-}
 
-func main() {
 	r := mux.NewRouter()
 	r.HandleFunc(settings.UrlTemplate, fetchImage).Methods("GET")
 
-	log.Println("ImgWizard started...")
+	log.Printf("ImgWizard started on http://%s", settings.ListenAddr)
 	http.ListenAndServe(settings.ListenAddr, r)
 }
