@@ -40,17 +40,17 @@ type Settings struct {
 }
 
 const (
-	DEFAULT_CACHE_DIR = "/tmp/imgwizard"
-	WEBP_HEADER       = "image/webp"
+	WEBP_HEADER = "image/webp"
 )
 
 var (
 	settings         Settings
 	supportedFormats = []string{"jpg", "jpeg", "png"}
 	listenAddr       = flag.String("l", "127.0.0.1:8070", "Address to listen on")
-	allowedMedia     = flag.String("m", "", "comma separated list of allowed media")
+	allowedMedia     = flag.String("m", "", "comma separated list of allowed media server hosts")
 	allowedSizes     = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir         = flag.String("c", "", "directory for cached files")
+	cacheDir         = flag.String("c", "/tmp/imgwizard", "directory for cached files")
+	local404Thumb    = flag.String("thumb", "/tmp/404.jpg", "path to default image")
 	mark             = flag.String("mark", "images", "Mark for nginx")
 	quality          = flag.Int("q", 0, "image quality after resize")
 )
@@ -59,9 +59,7 @@ var (
 // and from command-line
 func (s *Settings) loadSettings() {
 
-	s.CacheDir = DEFAULT_CACHE_DIR
 	s.Scheme = "http"
-	s.Local404Thumb = "/tmp/404.jpg"
 	s.AllowedSizes = nil
 	s.AllowedMedia = nil
 
@@ -87,9 +85,8 @@ func (s *Settings) loadSettings() {
 		s.AllowedSizes = strings.Split(*allowedSizes, ",")
 	}
 
-	if *cacheDir != "" {
-		s.CacheDir = *cacheDir
-	}
+	s.CacheDir = *cacheDir
+	s.Local404Thumb = *local404Thumb
 
 	if *quality != 0 {
 		s.Options.Quality = *quality
