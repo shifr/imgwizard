@@ -33,6 +33,7 @@ type Settings struct {
 	Local404Thumb string
 	AllowedSizes  []string
 	AllowedMedia  []string
+	Directories   []string
 	UrlTemplate   string
 
 	Context Context
@@ -50,6 +51,7 @@ var (
 	allowedMedia     = flag.String("m", "", "comma separated list of allowed media server hosts")
 	allowedSizes     = flag.String("s", "", "comma separated list of allowed sizes")
 	cacheDir         = flag.String("c", "/tmp/imgwizard", "directory for cached files")
+	dirsToSearch     = flag.String("d", "", "comma separated list of directories to search requested file")
 	local404Thumb    = flag.String("thumb", "/tmp/404.jpg", "path to default image")
 	mark             = flag.String("mark", "images", "Mark for nginx")
 	quality          = flag.Int("q", 0, "image quality after resize")
@@ -83,6 +85,10 @@ func (s *Settings) loadSettings() {
 
 	if *allowedSizes != "" {
 		s.AllowedSizes = strings.Split(*allowedSizes, ",")
+	}
+
+	if *dirsToSearch != "" {
+		s.Directories = strings.Split(*dirsToSearch, ",")
 	}
 
 	s.CacheDir = *cacheDir
@@ -136,12 +142,33 @@ func (s *Settings) makeCachePath() {
 // getLocalImage fetches original image from file system
 func getLocalImage(s *Settings) ([]byte, error) {
 	var image []byte
+	var filePath string
+	var file *os.File
+	var err error
 
-	file, err := os.Open(path.Join("/", s.Context.Path))
-	if err != nil {
-		file, err = os.Open(s.Local404Thumb)
+	if len(s.Directories) > 0 {
+		found := false
+		for _, dir := range s.Directories {
+			filePath = path.Join("/", dir, s.Context.Path)
+			file, err = os.Open(filePath)
+			if err == nil {
+				found = true
+				break
+			}
+		}
+		if !found {
+			file, err = os.Open(s.Local404Thumb)
+			if err != nil {
+				return image, err
+			}
+		}
+	} else {
+		file, err = os.Open(path.Join("/", s.Context.Path))
 		if err != nil {
-			return image, err
+			file, err = os.Open(s.Local404Thumb)
+			if err != nil {
+				return image, err
+			}
 		}
 	}
 
