@@ -1,0 +1,33 @@
+---
+- name: Install imgwizard
+  sudo: no
+  command: go get github.com/shifr/imgwizard
+  environment: env
+
+- name: Create the Supervisor config file
+  template: src=supervisor.j2
+            dest=/etc/supervisor/conf.d/{{ application_name }}.conf
+            backup=yes
+
+- name: Create the application log folder
+  file: path={{ application_log_dir }}
+        mode=0774
+        state=directory
+
+- name: Create the application log file
+  command: touch {{ application_log_file }}
+           creates={{ application_log_file }}
+
+- name: Set permission to the application log file
+  file: path={{ application_log_file }}
+        mode=0664
+        state=file
+
+- name: Start Supervisor
+  service: name=supervisor state=started
+
+- name: Re-read the Supervisor config files
+  supervisorctl: name={{ application_name }} state=present
+
+- name: Restart Supervisor
+  supervisorctl: name={{ application_name }} state=restarted

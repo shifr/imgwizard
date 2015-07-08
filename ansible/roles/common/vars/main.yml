@@ -1,0 +1,5 @@
+---
+env:
+  GOROOT: "/usr/local/go"
+  GOPATH: "/home/{{ ansible_ssh_user }}/go"
+  PATH: "{{ ansible_env.PATH }}:/usr/local/go/bin"

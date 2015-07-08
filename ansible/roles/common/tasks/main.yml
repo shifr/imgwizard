@@ -1,0 +1,17 @@
+---
+- name: Install dependencies
+  apt: name={{ item }} state=present update_cache=yes install_recommends=no
+  with_items: 
+    - git
+    - g++
+    - libvips
+    - libvips-dev
+    - supervisor
+
+- name: Download the Go tarball
+  get_url: url={{ go_download_location }}
+           dest=/usr/local/src/{{ go_tarball }}
+           sha256sum={{ go_tarball_checksum }}
+
+- name: Extract the Go tarball
+  command: tar -C /usr/local -xf /usr/local/src/{{ go_tarball }}
