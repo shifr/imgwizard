@@ -8,14 +8,36 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/shifr/imgwizard/cache"
-
-	"github.com/gorilla/mux"
 	"github.com/shifr/vips"
 )
+
+type Route struct {
+	pattern *regexp.Regexp
+	handler http.Handler
+}
+
+type RegexpHandler struct {
+	routes []*Route
+}
+
+func (h *RegexpHandler) HandleFunc(pattern *regexp.Regexp, handler func(http.ResponseWriter, *http.Request)) {
+	h.routes = append(h.routes, &Route{pattern, http.HandlerFunc(handler)})
+}
+
+func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	for _, route := range h.routes {
+		if route.pattern.MatchString(r.URL.Path) {
+			route.handler.ServeHTTP(w, r)
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
 
 type Context struct {
 	Path      string
@@ -34,7 +56,7 @@ type Settings struct {
 	AllowedSizes  []string
 	AllowedMedia  []string
 	Directories   []string
-	UrlTemplate   string
+	UrlExp        *regexp.Regexp
 
 	Context Context
 	Options vips.Options
@@ -106,8 +128,9 @@ func (s *Settings) loadSettings() {
 		medias = strings.Join(s.AllowedMedia, "|")
 	}
 
-	s.UrlTemplate = fmt.Sprintf(
-		"/{mark:%s}/{storage:loc|rem}/{size:%s}/{path:%s.+}", proxyMark, sizes, medias)
+	template := fmt.Sprintf(
+		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>%s.+)", proxyMark, sizes, medias)
+	s.UrlExp, _ = regexp.Compile(template)
 }
 
 // makeCachePath generates cache path from resized image
@@ -260,13 +283,22 @@ func stringIsExists(str string, list []string) bool {
 	return false
 }
 
+func parseVars(req *http.Request) map[string]string {
+	params := make(map[string]string)
+	match := settings.UrlExp.FindStringSubmatch(req.RequestURI)
+	for i, name := range settings.UrlExp.SubexpNames() {
+		params[name] = match[i]
+	}
+
+	return params
+}
+
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	acceptedTypes := strings.Split(req.Header["Accept"][0], ",")
-
-	settings.Options.Webp = stringIsExists(WEBP_HEADER, acceptedTypes)
-	params := mux.Vars(req)
+	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 
+	settings.Options.Webp = stringIsExists(WEBP_HEADER, acceptedTypes)
 	settings.Context.Storage = params["storage"]
 	settings.Context.Path = params["path"]
 	settings.Options.Width, _ = strconv.Atoi(sizes[0])
@@ -274,6 +306,7 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 
 	resultImage := getOrCreateImage()
 
+	rw.Header().Set("Content-Length", strconv.Itoa(len(resultImage)))
 	rw.Write(resultImage)
 }
 
@@ -281,8 +314,8 @@ func main() {
 	flag.Parse()
 	settings.loadSettings()
 
-	r := mux.NewRouter()
-	r.HandleFunc(settings.UrlTemplate, fetchImage).Methods("GET")
+	r := new(RegexpHandler)
+	r.HandleFunc(settings.UrlExp, fetchImage)
 
 	log.Printf("ImgWizard started on http://%s", settings.ListenAddr)
 	http.ListenAndServe(settings.ListenAddr, r)
