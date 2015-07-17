@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -158,8 +159,8 @@ func (s *Settings) makeCachePath() {
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
 	s.Context.Format = imageFormat
-	s.Context.CachePath = fmt.Sprintf(
-		"%s/%s/%s", s.CacheDir, subPath, cacheImageName)
+	s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
+		"%s/%s/%s", s.CacheDir, subPath, cacheImageName))
 }
 
 // getLocalImage fetches original image from file system
@@ -168,6 +169,8 @@ func getLocalImage(s *Settings) ([]byte, error) {
 	var filePath string
 	var file *os.File
 	var err error
+
+	s.Context.Path, _ = url.QueryUnescape(s.Context.Path)
 
 	if len(s.Directories) > 0 {
 		found := false
