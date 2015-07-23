@@ -297,7 +297,7 @@ func parseVars(req *http.Request) map[string]string {
 }
 
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
-	acceptedTypes := strings.Split(req.Header["Accept"][0], ",")
+	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 
