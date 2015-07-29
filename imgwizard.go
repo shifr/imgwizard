@@ -247,7 +247,7 @@ func getOrCreateImage() []byte {
 	case "loc":
 		image, err = getLocalImage(&sett)
 		if err != nil {
-			log.Println("Can't get orig local file, reason - ", err)
+			log.Printf("Can't get orig local file - %s, reason - %s", sett.Context.Path, err)
 			return image
 		}
 
@@ -255,7 +255,7 @@ func getOrCreateImage() []byte {
 		imgUrl := fmt.Sprintf("%s://%s", sett.Scheme, sett.Context.Path)
 		image, err = getRemoteImage(imgUrl)
 		if err != nil {
-			log.Println("Can't get orig remote file, reason - ", err)
+			log.Println("Can't get orig remote file - %s, reason - %s", sett.Context.Path, err)
 			return image
 		}
 	}
