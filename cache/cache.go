@@ -30,6 +30,10 @@ func (c *Cache) Get(key string) ([]byte, error) {
 
 func (c *Cache) Set(key string, value []byte) error {
 
+	if len(value) == 0 {
+		return nil
+	}
+
 	err := os.MkdirAll(path.Dir(key), 0777)
 	if err != nil {
 		return err

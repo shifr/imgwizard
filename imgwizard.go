@@ -172,6 +172,8 @@ func getLocalImage(s *Settings) ([]byte, error) {
 
 	s.Context.Path, _ = url.QueryUnescape(s.Context.Path)
 
+	defer file.Close()
+
 	if len(s.Directories) > 0 {
 		found := false
 		for _, dir := range s.Directories {
@@ -246,6 +248,7 @@ func getOrCreateImage() []byte {
 		image, err = getLocalImage(&sett)
 		if err != nil {
 			log.Println("Can't get orig local file, reason - ", err)
+			return image
 		}
 
 	case "rem":
@@ -253,6 +256,7 @@ func getOrCreateImage() []byte {
 		image, err = getRemoteImage(imgUrl)
 		if err != nil {
 			log.Println("Can't get orig remote file, reason - ", err)
+			return image
 		}
 	}
 
