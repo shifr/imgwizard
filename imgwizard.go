@@ -41,6 +41,7 @@ func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type Context struct {
+	NoCache   bool
 	Path      string
 	Format    string
 	CachePath string
@@ -54,6 +55,7 @@ type Settings struct {
 	CacheDir      string
 	Scheme        string
 	Local404Thumb string
+	NoCacheKey    string
 	AllowedSizes  []string
 	AllowedMedia  []string
 	Directories   []string
@@ -77,6 +79,7 @@ var (
 	dirsToSearch     = flag.String("d", "", "comma separated list of directories to search requested file")
 	local404Thumb    = flag.String("thumb", "/tmp/404.jpg", "path to default image")
 	mark             = flag.String("mark", "images", "Mark for nginx")
+	noCacheKey       = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
 	quality          = flag.Int("q", 0, "image quality after resize")
 )
 
@@ -112,6 +115,10 @@ func (s *Settings) loadSettings() {
 
 	if *dirsToSearch != "" {
 		s.Directories = strings.Split(*dirsToSearch, ",")
+	}
+
+	if *noCacheKey != "" {
+		s.NoCacheKey = *noCacheKey
 	}
 
 	s.CacheDir = *cacheDir
@@ -239,8 +246,10 @@ func getOrCreateImage() []byte {
 	var image []byte
 	var err error
 
-	if image, err = c.Get(sett.Context.CachePath); err == nil {
-		return image
+	if !sett.Context.NoCache {
+		if image, err = c.Get(sett.Context.CachePath); err == nil {
+			return image
+		}
 	}
 
 	switch sett.Context.Storage {
@@ -260,7 +269,7 @@ func getOrCreateImage() []byte {
 		}
 	}
 
-	if !stringIsExists(sett.Context.Format, supportedFormats) {
+	if !stringExists(sett.Context.Format, supportedFormats) {
 		err = c.Set(sett.Context.CachePath, image)
 		if err != nil {
 			log.Println("Can't set cache, reason - ", err)
@@ -281,7 +290,7 @@ func getOrCreateImage() []byte {
 	return buf
 }
 
-func stringIsExists(str string, list []string) bool {
+func stringExists(str string, list []string) bool {
 	for _, el := range list {
 		if el == str {
 			return true
@@ -302,14 +311,17 @@ func parseVars(req *http.Request) map[string]string {
 
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
+	noCacheKey := req.Header.Get("X-No-Cache")
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 
-	settings.Options.Webp = stringIsExists(WEBP_HEADER, acceptedTypes)
-	settings.Context.Storage = params["storage"]
-	settings.Context.Path = params["path"]
+	settings.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
 	settings.Options.Width, _ = strconv.Atoi(sizes[0])
 	settings.Options.Height, _ = strconv.Atoi(sizes[1])
+
+	settings.Context.NoCache = settings.NoCacheKey != "" && settings.NoCacheKey == noCacheKey
+	settings.Context.Storage = params["storage"]
+	settings.Context.Path = params["path"]
 
 	resultImage := getOrCreateImage()
 
