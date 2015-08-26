@@ -14,7 +14,7 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
 
 # How to use?
 
-http://{server}/images/{storage}/{size}/{path_to_file}
+http://{server}/{mark}/{storage}/{size}/{path_to_file}
 
   - <b>server</b> - imgwizard server addr
   - <b>mark</b> - mark for url (can be used for nginx proxying)
@@ -24,7 +24,7 @@ http://{server}/images/{storage}/{size}/{path_to_file}
 
 ##### Example: #####
 
-http://<b>192.168.0.1:4444</b>/images/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>
+http://<b>192.168.0.1:4444</b>/<b>images</b>/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>
 
 # How to install? #
 
@@ -58,7 +58,7 @@ Check [imgwizard] work after server start
 [speed]: http://www.vips.ecs.soton.ac.uk/index.php?title=Speed_and_Memory_Use
 
 # Parameters on start? #
-```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -thumb /path_to_404_image.jpg```
+```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -thumb /path_to_404_image.jpg -no-cache-key 123```
 
   - <b>-l</b>: Address to listen on (default - "localhost:8070")
   - <b>-c</b>: directory for cached files (default - "/tmp/imgwizard")
@@ -67,7 +67,7 @@ Check [imgwizard] work after server start
   - <b>-q</b>: resized image quality (default - 80)
   - <b>-mark</b>: mark (default - images)
   - <b>-thumb</b>: default image if requested doesn't exists (default - /tmp/404.jpg)
-
+  - <b> -no-cache-key</b>: secret key that must be equal X-No-Cache value from request header to prevent reading from cache
 
 # Plans? #
 Yes, a lot.
