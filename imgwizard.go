@@ -324,8 +324,12 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	settings.Context.Path = params["path"]
 
 	resultImage := getOrCreateImage()
+	contentLength := len(resultImage)
 
-	rw.Header().Set("Content-Length", strconv.Itoa(len(resultImage)))
+	if contentLength == 0 {
+		http.NotFound(rw, req)
+	}
+	rw.Header().Set("Content-Length", strconv.Itoa(contentLength))
 	rw.Write(resultImage)
 }
 
