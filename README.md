@@ -14,17 +14,21 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
 
 # How to use?
 
-http://{server}/{mark}/{storage}/{size}/{path_to_file}
+http://{server}/{mark}/{storage}/{size}/{path_to_file}?{params}
 
   - <b>server</b> - imgwizard server addr
   - <b>mark</b> - mark for url (can be used for nginx proxying)
   - <b>storage</b> - "loc" (local file system) or "rem" (remote media)
   - <b>size</b> - "320x240" or "320x" or "x240"
   - <b>path_to_file</b> - path to original file (without "http://")
+  - <b>params</b> - query parameters
+
+#####Params:#####
+  - <b>crop</b> - sides fixed when cropping (top, right, bottom, left)
 
 ##### Example: #####
 
-http://<b>192.168.0.1:4444</b>/<b>images</b>/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>
+http://<b>192.168.0.1:4444</b>/<b>images</b>/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>?<b>crop=top,left</b>
 
 # How to install? #
 
