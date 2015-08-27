@@ -17,6 +17,8 @@ import (
 	"github.com/shifr/vips"
 )
 
+const DEBUG = true
+
 type Route struct {
 	pattern *regexp.Regexp
 	handler http.Handler
@@ -46,6 +48,7 @@ type Context struct {
 	Format    string
 	CachePath string
 	Storage   string
+	Query     string
 	Width     int
 	Height    int
 }
@@ -72,15 +75,21 @@ const (
 var (
 	settings         Settings
 	supportedFormats = []string{"jpg", "jpeg", "png"}
-	listenAddr       = flag.String("l", "127.0.0.1:8070", "Address to listen on")
-	allowedMedia     = flag.String("m", "", "comma separated list of allowed media server hosts")
-	allowedSizes     = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir         = flag.String("c", "/tmp/imgwizard", "directory for cached files")
-	dirsToSearch     = flag.String("d", "", "comma separated list of directories to search requested file")
-	local404Thumb    = flag.String("thumb", "/tmp/404.jpg", "path to default image")
-	mark             = flag.String("mark", "images", "Mark for nginx")
-	noCacheKey       = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
-	quality          = flag.Int("q", 0, "image quality after resize")
+	Crop             = map[string]vips.Gravity{
+		"top":    vips.NORTH,
+		"right":  vips.EAST,
+		"bottom": vips.SOUTH,
+		"left":   vips.WEST,
+	}
+	listenAddr    = flag.String("l", "127.0.0.1:8070", "Address to listen on")
+	allowedMedia  = flag.String("m", "", "comma separated list of allowed media server hosts")
+	allowedSizes  = flag.String("s", "", "comma separated list of allowed sizes")
+	cacheDir      = flag.String("c", "/tmp/imgwizard", "directory for cached files")
+	dirsToSearch  = flag.String("d", "", "comma separated list of directories to search requested file")
+	local404Thumb = flag.String("thumb", "/tmp/404.jpg", "path to default image")
+	mark          = flag.String("mark", "images", "Mark for nginx")
+	noCacheKey    = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
+	quality       = flag.Int("q", 0, "image quality after resize")
 )
 
 // loadSettings loads settings from settings.json
@@ -97,7 +106,6 @@ func (s *Settings) loadSettings() {
 	s.Options.Quality = 80
 	s.Options.Extend = vips.EXTEND_WHITE
 	s.Options.Interpolator = vips.BILINEAR
-	s.Options.Gravity = vips.CENTRE
 
 	var sizes = "[0-9]*x[0-9]*"
 	var medias = ""
@@ -165,9 +173,15 @@ func (s *Settings) makeCachePath() {
 	case "rem":
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
+
 	s.Context.Format = imageFormat
 	s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
 		"%s/%s/%s", s.CacheDir, subPath, cacheImageName))
+
+	if s.Context.Query != "" {
+		s.Context.CachePath = fmt.Sprintf(
+			"%s?%s", s.Context.CachePath, s.Context.Query)
+	}
 }
 
 // getLocalImage fetches original image from file system
@@ -177,6 +191,7 @@ func getLocalImage(s *Settings) ([]byte, error) {
 	var file *os.File
 	var err error
 
+	debug("Trying to find local image")
 	s.Context.Path, _ = url.QueryUnescape(s.Context.Path)
 
 	defer file.Close()
@@ -222,6 +237,8 @@ func getLocalImage(s *Settings) ([]byte, error) {
 func getRemoteImage(url string) ([]byte, error) {
 	var image []byte
 
+	debug("Trying to fetch remote image")
+
 	resp, err := http.Get(url)
 	if err != nil {
 		return image, err
@@ -247,9 +264,11 @@ func getOrCreateImage() []byte {
 	var err error
 
 	if !sett.Context.NoCache {
+		debug("Get from cache, key: %s", sett.Context.CachePath)
 		if image, err = c.Get(sett.Context.CachePath); err == nil {
 			return image
 		}
+		debug("Image not found")
 	}
 
 	switch sett.Context.Storage {
@@ -282,6 +301,7 @@ func getOrCreateImage() []byte {
 		log.Println("Can't resize image, reason - ", err)
 	}
 
+	debug("Set to cache, key: %s", sett.Context.CachePath)
 	err = c.Set(sett.Context.CachePath, buf)
 	if err != nil {
 		log.Println("Can't set cache, reason - ", err)
@@ -301,11 +321,11 @@ func stringExists(str string, list []string) bool {
 
 func parseVars(req *http.Request) map[string]string {
 	params := make(map[string]string)
-	match := settings.UrlExp.FindStringSubmatch(req.RequestURI)
+	match := settings.UrlExp.FindStringSubmatch(req.URL.Path)
 	for i, name := range settings.UrlExp.SubexpNames() {
 		params[name] = match[i]
 	}
-
+	params["query"] = req.URL.RawQuery
 	return params
 }
 
@@ -315,6 +335,15 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 
+	settings.Options.Gravity = vips.CENTRE
+	crop := req.FormValue("crop")
+	if crop != "" {
+		for _, g := range strings.Split(crop, ",") {
+			if v, ok := Crop[g]; ok {
+				settings.Options.Gravity = settings.Options.Gravity | v
+			}
+		}
+	}
 	settings.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
 	settings.Options.Width, _ = strconv.Atoi(sizes[0])
 	settings.Options.Height, _ = strconv.Atoi(sizes[1])
@@ -322,6 +351,7 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	settings.Context.NoCache = settings.NoCacheKey != "" && settings.NoCacheKey == noCacheKey
 	settings.Context.Storage = params["storage"]
 	settings.Context.Path = params["path"]
+	settings.Context.Query = params["query"]
 
 	resultImage := getOrCreateImage()
 	contentLength := len(resultImage)
@@ -342,4 +372,11 @@ func main() {
 
 	log.Printf("ImgWizard started on http://%s", settings.ListenAddr)
 	http.ListenAndServe(settings.ListenAddr, r)
+}
+
+func debug(s string, args ...interface{}) {
+	if !DEBUG {
+		return
+	}
+	fmt.Fprintf(os.Stderr, s+"\n", args...)
 }
