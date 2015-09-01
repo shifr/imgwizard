@@ -17,7 +17,7 @@ import (
 	"github.com/shifr/vips"
 )
 
-const DEBUG = true
+const DEBUG = false
 
 type Route struct {
 	pattern *regexp.Regexp
