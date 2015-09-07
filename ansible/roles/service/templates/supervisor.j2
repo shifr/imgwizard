@@ -1,0 +1,4 @@
+[program:{{ application_name }}]
+command = /home/{{ ansible_ssh_user }}/go/bin/imgwizard -l {{ imgwz_host }}:{{ imgwz_port }}
+stdout_logfile = {{ application_log_file }}
+redirect_stderr = true
