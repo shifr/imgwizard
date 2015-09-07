@@ -17,8 +17,6 @@ import (
 	"github.com/shifr/vips"
 )
 
-const DEBUG = false
-
 type Route struct {
 	pattern *regexp.Regexp
 	handler http.Handler
@@ -70,9 +68,12 @@ type Settings struct {
 
 const (
 	WEBP_HEADER = "image/webp"
+	DEBUG       = false
+	VERSION     = 1.0
 )
 
 var (
+	DEFAULT_QUALITY  = 80
 	settings         Settings
 	supportedFormats = []string{"jpg", "jpeg", "png"}
 	Crop             = map[string]vips.Gravity{
@@ -112,6 +113,8 @@ func (s *Settings) loadSettings() {
 	var proxyMark = *mark
 
 	s.ListenAddr = *listenAddr
+	s.CacheDir = *cacheDir
+	s.Local404Thumb = *local404Thumb
 
 	if *allowedMedia != "" {
 		s.AllowedMedia = strings.Split(*allowedMedia, ",")
@@ -129,11 +132,8 @@ func (s *Settings) loadSettings() {
 		s.NoCacheKey = *noCacheKey
 	}
 
-	s.CacheDir = *cacheDir
-	s.Local404Thumb = *local404Thumb
-
 	if *quality != 0 {
-		s.Options.Quality = *quality
+		DEFAULT_QUALITY = *quality
 	}
 
 	if len(s.AllowedSizes) > 0 {
@@ -158,6 +158,7 @@ func (s *Settings) makeCachePath() {
 	lastIndex := len(pathParts) - 1
 	imageData := strings.Split(pathParts[lastIndex], ".")
 	imageName, imageFormat := imageData[0], strings.ToLower(imageData[1])
+	s.Context.Format = imageFormat
 
 	if s.Options.Webp {
 		cacheImageName = fmt.Sprintf(
@@ -174,7 +175,6 @@ func (s *Settings) makeCachePath() {
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
 
-	s.Context.Format = imageFormat
 	s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
 		"%s/%s/%s", s.CacheDir, subPath, cacheImageName))
 
@@ -237,7 +237,7 @@ func getLocalImage(s *Settings) ([]byte, error) {
 func getRemoteImage(url string) ([]byte, error) {
 	var image []byte
 
-	debug("Trying to fetch remote image")
+	debug("Trying to fetch remote image: %s", url)
 
 	resp, err := http.Get(url)
 	if err != nil {
@@ -320,12 +320,13 @@ func stringExists(str string, list []string) bool {
 }
 
 func parseVars(req *http.Request) map[string]string {
-	params := make(map[string]string)
+	params := map[string]string{"query": req.URL.RawQuery}
 	match := settings.UrlExp.FindStringSubmatch(req.URL.Path)
+
 	for i, name := range settings.UrlExp.SubexpNames() {
 		params[name] = match[i]
 	}
-	params["query"] = req.URL.RawQuery
+
 	return params
 }
 
@@ -336,14 +337,20 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	sizes := strings.Split(params["size"], "x")
 
 	settings.Options.Gravity = vips.CENTRE
-	crop := req.FormValue("crop")
-	if crop != "" {
+	if crop := req.FormValue("crop"); crop != "" {
 		for _, g := range strings.Split(crop, ",") {
 			if v, ok := Crop[g]; ok {
 				settings.Options.Gravity = settings.Options.Gravity | v
 			}
 		}
 	}
+
+	if q := req.FormValue("q"); q != "" {
+		settings.Options.Quality, _ = strconv.Atoi(q)
+	} else {
+		settings.Options.Quality = DEFAULT_QUALITY
+	}
+
 	settings.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
 	settings.Options.Width, _ = strconv.Atoi(sizes[0])
 	settings.Options.Height, _ = strconv.Atoi(sizes[1])
@@ -359,6 +366,7 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	if contentLength == 0 {
 		http.NotFound(rw, req)
 	}
+
 	rw.Header().Set("Content-Length", strconv.Itoa(contentLength))
 	rw.Write(resultImage)
 }
