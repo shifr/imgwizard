@@ -67,6 +67,14 @@ func TestCachePath(t *testing.T) {
 			0,
 			"/tmp/imgwizard/m/e/d/i/a_dir/image_orig_0x0.jpg",
 		},
+		{
+			"/tmp/imgwizard",
+			"loc",
+			"m/e/d/i/a_dir/image_orig.jpg?crop=left,top&q=10",
+			0,
+			0,
+			"/tmp/imgwizard/m/e/d/i/a_dir/image_orig_0x0.jpg?crop=left,top&q=10",
+		},
 	}
 
 	for i, test := range tests {
