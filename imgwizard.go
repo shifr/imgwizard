@@ -52,15 +52,14 @@ type Context struct {
 }
 
 type Settings struct {
-	ListenAddr    string
-	CacheDir      string
-	Scheme        string
-	Local404Thumb string
-	NoCacheKey    string
-	AllowedSizes  []string
-	AllowedMedia  []string
-	Directories   []string
-	UrlExp        *regexp.Regexp
+	ListenAddr   string
+	CacheDir     string
+	Scheme       string
+	NoCacheKey   string
+	AllowedSizes []string
+	AllowedMedia []string
+	Directories  []string
+	UrlExp       *regexp.Regexp
 
 	Context Context
 	Options vips.Options
@@ -82,15 +81,14 @@ var (
 		"bottom": vips.SOUTH,
 		"left":   vips.WEST,
 	}
-	listenAddr    = flag.String("l", "127.0.0.1:8070", "Address to listen on")
-	allowedMedia  = flag.String("m", "", "comma separated list of allowed media server hosts")
-	allowedSizes  = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir      = flag.String("c", "/tmp/imgwizard", "directory for cached files")
-	dirsToSearch  = flag.String("d", "", "comma separated list of directories to search requested file")
-	local404Thumb = flag.String("thumb", "/tmp/404.jpg", "path to default image")
-	mark          = flag.String("mark", "images", "Mark for nginx")
-	noCacheKey    = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
-	quality       = flag.Int("q", 0, "image quality after resize")
+	listenAddr   = flag.String("l", "127.0.0.1:8070", "Address to listen on")
+	allowedMedia = flag.String("m", "", "comma separated list of allowed media server hosts")
+	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
+	cacheDir     = flag.String("c", "/tmp/imgwizard", "directory for cached files")
+	dirsToSearch = flag.String("d", "", "comma separated list of directories to search requested file")
+	mark         = flag.String("mark", "images", "Mark for nginx")
+	noCacheKey   = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
+	quality      = flag.Int("q", 0, "image quality after resize")
 )
 
 // loadSettings loads settings from settings.json
@@ -114,7 +112,6 @@ func (s *Settings) loadSettings() {
 
 	s.ListenAddr = *listenAddr
 	s.CacheDir = *cacheDir
-	s.Local404Thumb = *local404Thumb
 
 	if *allowedMedia != "" {
 		s.AllowedMedia = strings.Split(*allowedMedia, ",")
@@ -184,42 +181,48 @@ func (s *Settings) makeCachePath() {
 	}
 }
 
-// getLocalImage fetches original image from file system
-func getLocalImage(s *Settings) ([]byte, error) {
-	var image []byte
+func fileExists(s *Settings) (string, error) {
 	var filePath string
-	var file *os.File
 	var err error
 
 	debug("Trying to find local image")
 	s.Context.Path, _ = url.QueryUnescape(s.Context.Path)
 
-	defer file.Close()
-
 	if len(s.Directories) > 0 {
-		found := false
 		for _, dir := range s.Directories {
 			filePath = path.Join("/", dir, s.Context.Path)
-			file, err = os.Open(filePath)
-			if err == nil {
-				found = true
-				break
+			if _, err = os.Stat(filePath); err == nil {
+				return filePath, nil
 			}
 		}
-		if !found {
-			file, err = os.Open(s.Local404Thumb)
-			if err != nil {
-				return image, err
-			}
-		}
-	} else {
-		file, err = os.Open(path.Join("/", s.Context.Path))
-		if err != nil {
-			file, err = os.Open(s.Local404Thumb)
-			if err != nil {
-				return image, err
-			}
-		}
+		return "", err
+	}
+
+	filePath = path.Join("/", s.Context.Path)
+
+	if _, err = os.Stat(filePath); os.IsNotExist(err) {
+		return "", err
+	}
+
+	return filePath, nil
+
+}
+
+// getLocalImage fetches original image from file system
+func getLocalImage(s *Settings) ([]byte, error) {
+	var image []byte
+	var err error
+
+	filePath, err := fileExists(s)
+	if err != nil {
+		return image, err
+	}
+
+	file, err := os.Open(filePath)
+	defer file.Close()
+
+	if err != nil {
+		return image, err
 	}
 
 	info, _ := file.Stat()
@@ -240,10 +243,11 @@ func getRemoteImage(url string) ([]byte, error) {
 	debug("Trying to fetch remote image: %s", url)
 
 	resp, err := http.Get(url)
+	defer resp.Body.Close()
+
 	if err != nil {
 		return image, err
 	}
-	defer resp.Body.Close()
 
 	image, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -255,8 +259,7 @@ func getRemoteImage(url string) ([]byte, error) {
 
 // getOrCreateImage check cache path for requested image
 // if image doesn't exist - creates it
-func getOrCreateImage() []byte {
-	sett := settings
+func getOrCreateImage(sett Settings) []byte {
 	sett.makeCachePath()
 
 	var c *cache.Cache
@@ -335,32 +338,33 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	noCacheKey := req.Header.Get("X-No-Cache")
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
+	sett := settings
 
-	settings.Options.Gravity = vips.CENTRE
+	sett.Options.Gravity = vips.CENTRE
 	if crop := req.FormValue("crop"); crop != "" {
 		for _, g := range strings.Split(crop, ",") {
 			if v, ok := Crop[g]; ok {
-				settings.Options.Gravity = settings.Options.Gravity | v
+				sett.Options.Gravity = sett.Options.Gravity | v
 			}
 		}
 	}
 
 	if q := req.FormValue("q"); q != "" {
-		settings.Options.Quality, _ = strconv.Atoi(q)
+		sett.Options.Quality, _ = strconv.Atoi(q)
 	} else {
-		settings.Options.Quality = DEFAULT_QUALITY
+		sett.Options.Quality = DEFAULT_QUALITY
 	}
 
-	settings.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
-	settings.Options.Width, _ = strconv.Atoi(sizes[0])
-	settings.Options.Height, _ = strconv.Atoi(sizes[1])
+	sett.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
+	sett.Options.Width, _ = strconv.Atoi(sizes[0])
+	sett.Options.Height, _ = strconv.Atoi(sizes[1])
 
-	settings.Context.NoCache = settings.NoCacheKey != "" && settings.NoCacheKey == noCacheKey
-	settings.Context.Storage = params["storage"]
-	settings.Context.Path = params["path"]
-	settings.Context.Query = params["query"]
+	sett.Context.NoCache = sett.NoCacheKey != "" && sett.NoCacheKey == noCacheKey
+	sett.Context.Storage = params["storage"]
+	sett.Context.Path = params["path"]
+	sett.Context.Query = params["query"]
 
-	resultImage := getOrCreateImage()
+	resultImage := getOrCreateImage(sett)
 	contentLength := len(resultImage)
 
 	if contentLength == 0 {

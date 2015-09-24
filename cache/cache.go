@@ -10,12 +10,18 @@ type Cache struct{}
 
 func (c *Cache) Get(key string) ([]byte, error) {
 	var image []byte
+	var err error
+
+	if _, err = os.Stat(key); os.IsNotExist(err) {
+		return image, err
+	}
 
 	file, err := os.Open(key)
+	defer file.Close()
+
 	if err != nil {
 		return image, err
 	}
-	defer file.Close()
 
 	info, _ := file.Stat()
 	image = make([]byte, info.Size())
@@ -31,6 +37,10 @@ func (c *Cache) Get(key string) ([]byte, error) {
 func (c *Cache) Set(key string, value []byte) error {
 
 	if len(value) == 0 {
+		return nil
+	}
+
+	if _, err := os.Stat(key); err == nil {
 		return nil
 	}
 
