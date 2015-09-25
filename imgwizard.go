@@ -66,13 +66,15 @@ type Settings struct {
 }
 
 const (
-	WEBP_HEADER = "image/webp"
-	DEBUG       = false
-	VERSION     = 1.0
+	VERSION           = 1.1
+	DEBUG             = false
+	DEFAULT_POOL_SIZE = 100000
+	WEBP_HEADER       = "image/webp"
 )
 
 var (
 	DEFAULT_QUALITY  = 80
+	ChanPool         chan int
 	settings         Settings
 	supportedFormats = []string{"jpg", "jpeg", "png"}
 	Crop             = map[string]vips.Gravity{
@@ -364,20 +366,37 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	sett.Context.Path = params["path"]
 	sett.Context.Query = params["query"]
 
+	ChanPool <- 1
+
 	resultImage := getOrCreateImage(sett)
 	contentLength := len(resultImage)
 
 	if contentLength == 0 {
+		debug("Content length 0")
 		http.NotFound(rw, req)
 	}
 
 	rw.Header().Set("Content-Length", strconv.Itoa(contentLength))
 	rw.Write(resultImage)
+
+	<-ChanPool
+}
+
+func init() {
+	settings.loadSettings()
+
+	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
+	if err != nil {
+		debug("Making channel with default size")
+		ChanPool = make(chan int, DEFAULT_POOL_SIZE)
+	} else {
+		debug("Making channel, size %d", pool_size)
+		ChanPool = make(chan int, pool_size)
+	}
 }
 
 func main() {
 	flag.Parse()
-	settings.loadSettings()
 
 	r := new(RegexpHandler)
 	r.HandleFunc(settings.UrlExp, fetchImage)
