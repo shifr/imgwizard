@@ -67,12 +67,12 @@ type Settings struct {
 
 const (
 	VERSION           = 1.1
-	DEBUG             = false
 	DEFAULT_POOL_SIZE = 100000
 	WEBP_HEADER       = "image/webp"
 )
 
 var (
+	DEBUG            = false
 	DEFAULT_QUALITY  = 80
 	ChanPool         chan int
 	settings         Settings
@@ -104,7 +104,6 @@ func (s *Settings) loadSettings() {
 	//defaults for vips
 	s.Options.Crop = true
 	s.Options.Enlarge = true
-	s.Options.Quality = 80
 	s.Options.Extend = vips.EXTEND_WHITE
 	s.Options.Interpolator = vips.BILINEAR
 
@@ -134,6 +133,7 @@ func (s *Settings) loadSettings() {
 	if *quality != 0 {
 		DEFAULT_QUALITY = *quality
 	}
+	s.Options.Quality = DEFAULT_QUALITY
 
 	if len(s.AllowedSizes) > 0 {
 		sizes = strings.Join(s.AllowedSizes, "|")
@@ -353,8 +353,6 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 
 	if q := req.FormValue("q"); q != "" {
 		sett.Options.Quality, _ = strconv.Atoi(q)
-	} else {
-		sett.Options.Quality = DEFAULT_QUALITY
 	}
 
 	sett.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
@@ -383,7 +381,12 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 }
 
 func init() {
+	flag.Parse()
 	settings.loadSettings()
+
+	if os.Getenv("DEBUG_ENABLED") != "" {
+		DEBUG = true
+	}
 
 	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
 	if err != nil {
@@ -396,8 +399,6 @@ func init() {
 }
 
 func main() {
-	flag.Parse()
-
 	r := new(RegexpHandler)
 	r.HandleFunc(settings.UrlExp, fetchImage)
 
