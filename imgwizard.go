@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -41,14 +42,16 @@ func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type Context struct {
-	NoCache   bool
-	Path      string
-	Format    string
-	CachePath string
-	Storage   string
-	Query     string
-	Width     int
-	Height    int
+	NoCache    bool
+	OnlyCache  bool
+	Path       string
+	RequestURI string
+	Format     string
+	CachePath  string
+	Storage    string
+	Query      string
+	Width      int
+	Height     int
 }
 
 type Settings struct {
@@ -59,6 +62,7 @@ type Settings struct {
 	AllowedSizes []string
 	AllowedMedia []string
 	Directories  []string
+	Nodes        []string
 	UrlExp       *regexp.Regexp
 
 	Context Context
@@ -69,6 +73,8 @@ const (
 	VERSION           = 1.1
 	DEFAULT_POOL_SIZE = 100000
 	WEBP_HEADER       = "image/webp"
+	ONLY_CACHE_HEADER = "X-Cache-Only"
+	NO_CACHE_HEADER   = "X-No-Cache"
 )
 
 var (
@@ -91,6 +97,7 @@ var (
 	mark         = flag.String("mark", "images", "Mark for nginx")
 	noCacheKey   = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
 	quality      = flag.Int("q", 0, "image quality after resize")
+	nodes        = flag.String("nodes", "", "Other imgwizard nodes to ask before process image")
 )
 
 // loadSettings loads settings from settings.json
@@ -128,6 +135,10 @@ func (s *Settings) loadSettings() {
 
 	if *noCacheKey != "" {
 		s.NoCacheKey = *noCacheKey
+	}
+
+	if *nodes != "" {
+		s.Nodes = strings.Split(*nodes, ",")
 	}
 
 	if *quality != 0 {
@@ -239,41 +250,86 @@ func getLocalImage(s *Settings) ([]byte, error) {
 }
 
 // getRemoteImage fetches original image by http url
-func getRemoteImage(url string) ([]byte, error) {
+func getRemoteImage(s *Settings, url string, isNode bool) ([]byte, error) {
 	var image []byte
+	var client = &http.Client{}
 
 	debug("Trying to fetch remote image: %s", url)
 
-	resp, err := http.Get(url)
+	req, _ := http.NewRequest("GET", url, nil)
+
+	if isNode {
+		req.Header.Set(ONLY_CACHE_HEADER, "true")
+
+		if s.Options.Webp {
+			req.Header.Set("Accept", WEBP_HEADER)
+		}
+	}
+
+	resp, err := client.Do(req)
 	defer resp.Body.Close()
 
 	if err != nil {
 		return image, err
 	}
 
-	image, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return image, err
+	if resp.StatusCode != http.StatusOK {
+		return image, errors.New("Not found")
 	}
 
+	image, err = ioutil.ReadAll(resp.Body)
+
 	return image, nil
+}
+
+func checkCache(s *Settings) ([]byte, error) {
+	var c *cache.Cache
+	var image []byte
+	var err error
+
+	debug("Get from cache, key: %s", s.Context.CachePath)
+	if image, err = c.Get(s.Context.CachePath); err == nil {
+		return image, nil
+	}
+
+	if len(s.Nodes) > 0 && !s.Context.OnlyCache {
+		debug("Checking other nodes")
+		if image, err = checkNodes(s); err == nil {
+			return image, nil
+		}
+	}
+
+	debug("Image not found")
+	return image, err
+}
+
+func checkNodes(s *Settings) ([]byte, error) {
+	var image []byte
+	var err error
+
+	for _, node := range s.Nodes {
+		reqUrl := fmt.Sprintf("%s://%s%s", s.Scheme, node, s.Context.RequestURI)
+		if image, err = getRemoteImage(s, reqUrl, true); err == nil {
+			debug("Found at node: %s", node)
+			return image, nil
+		}
+	}
+
+	return image, errors.New("No one node has the image")
 }
 
 // getOrCreateImage check cache path for requested image
 // if image doesn't exist - creates it
 func getOrCreateImage(sett Settings) []byte {
-	sett.makeCachePath()
 
 	var c *cache.Cache
 	var image []byte
 	var err error
 
 	if !sett.Context.NoCache {
-		debug("Get from cache, key: %s", sett.Context.CachePath)
-		if image, err = c.Get(sett.Context.CachePath); err == nil {
+		if image, err = checkCache(&sett); err == nil {
 			return image
 		}
-		debug("Image not found")
 	}
 
 	switch sett.Context.Storage {
@@ -286,13 +342,14 @@ func getOrCreateImage(sett Settings) []byte {
 
 	case "rem":
 		imgUrl := fmt.Sprintf("%s://%s", sett.Scheme, sett.Context.Path)
-		image, err = getRemoteImage(imgUrl)
+		image, err = getRemoteImage(&sett, imgUrl, false)
 		if err != nil {
 			log.Println("Can't get orig remote file - %s, reason - %s", sett.Context.Path, err)
 			return image
 		}
 	}
 
+	debug("Check image format")
 	if !stringExists(sett.Context.Format, supportedFormats) {
 		err = c.Set(sett.Context.CachePath, image)
 		if err != nil {
@@ -301,6 +358,7 @@ func getOrCreateImage(sett Settings) []byte {
 		return image
 	}
 
+	debug("Processing image")
 	buf, err := vips.Resize(image, sett.Options)
 	if err != nil {
 		log.Println("Can't resize image, reason - ", err)
@@ -337,10 +395,14 @@ func parseVars(req *http.Request) map[string]string {
 
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
-	noCacheKey := req.Header.Get("X-No-Cache")
+	noCacheKey := req.Header.Get(NO_CACHE_HEADER)
+	onlyCache := req.Header.Get(ONLY_CACHE_HEADER)
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 	sett := settings
+
+	var resultImage []byte
+	var err error
 
 	sett.Options.Gravity = vips.CENTRE
 	if crop := req.FormValue("crop"); crop != "" {
@@ -360,22 +422,37 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	sett.Options.Height, _ = strconv.Atoi(sizes[1])
 
 	sett.Context.NoCache = sett.NoCacheKey != "" && sett.NoCacheKey == noCacheKey
+	sett.Context.RequestURI = req.RequestURI
 	sett.Context.Storage = params["storage"]
 	sett.Context.Path = params["path"]
 	sett.Context.Query = params["query"]
 
+	sett.makeCachePath()
+
 	ChanPool <- 1
 
-	resultImage := getOrCreateImage(sett)
-	contentLength := len(resultImage)
+	if onlyCache != "" {
+		sett.Context.OnlyCache = true
+		resultImage, err = checkCache(&sett)
 
-	if contentLength == 0 {
-		debug("Content length 0")
-		http.NotFound(rw, req)
+		if err != nil {
+			http.NotFound(rw, req)
+		} else {
+			rw.Write(resultImage)
+		}
+
+	} else {
+		resultImage = getOrCreateImage(sett)
+		contentLength := len(resultImage)
+
+		if contentLength == 0 {
+			debug("Content length 0")
+			http.NotFound(rw, req)
+		}
+
+		rw.Header().Set("Content-Length", strconv.Itoa(contentLength))
+		rw.Write(resultImage)
 	}
-
-	rw.Header().Set("Content-Length", strconv.Itoa(contentLength))
-	rw.Write(resultImage)
 
 	<-ChanPool
 }
@@ -410,5 +487,5 @@ func debug(s string, args ...interface{}) {
 	if !DEBUG {
 		return
 	}
-	fmt.Fprintf(os.Stderr, s+"\n", args...)
+	log.Printf(s+"\n", args...)
 }
