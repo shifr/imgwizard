@@ -70,7 +70,7 @@ type Settings struct {
 }
 
 const (
-	VERSION           = 1.1
+	VERSION           = 1.2
 	DEFAULT_POOL_SIZE = 100000
 	WEBP_HEADER       = "image/webp"
 	ONLY_CACHE_HEADER = "X-Cache-Only"
