@@ -25,10 +25,11 @@ http://{server}/{mark}/{storage}/{size}/{path_to_file}?{params}
 
 #####Params:#####
   - <b>crop</b> - sides fixed when cropping (top, right, bottom, left)
+  - <b>q</b> - result image quality (default set from command line "-q")
 
 ##### Example: #####
 
-http://<b>192.168.0.1:4444</b>/<b>images</b>/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>?<b>crop=top,left</b>
+http://<b>192.168.0.1:4444</b>/<b>images</b>/<b>rem</b>/<b>462x</b>/<b>media.google.com/uploads/images/1/test.jpg</b>?<b>crop=top,left</b>&<b>q=90</b>
 
 # How to install? #
 
@@ -60,6 +61,7 @@ Check [imgwizard] work after server start
 [centos]: http://astonj.com/tech/how-to-install-vips-on-centos-libvips/
 [libvips]: http://www.vips.ecs.soton.ac.uk/index.php?title=VIPS
 [speed]: http://www.vips.ecs.soton.ac.uk/index.php?title=Speed_and_Memory_Use
+[nodes]: https://github.com/shifr/imgwizard/issues/13
 
 # Parameters on start? #
 ```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -thumb /path_to_404_image.jpg -no-cache-key 123```
@@ -68,9 +70,10 @@ Check [imgwizard] work after server start
   - <b>-c</b>: directory for cached files (default - "/tmp/imgwizard")
   - <b>-m</b>: comma separated list of allowed media (default - all enabled)
   - <b>-s</b>: comma separated list of allowed sizes (default - all enabled)
+  - <b>-d</b>: comma separated list of directories to search original file
   - <b>-q</b>: resized image quality (default - 80)
   - <b>-mark</b>: mark (default - images)
-  - <b>-thumb</b>: default image if requested doesn't exists (default - /tmp/404.jpg)
+  - <b>-nodes</b>: comma separated list of other imgwizard nodes for cache check (see [nodes])
   - <b> -no-cache-key</b>: secret key that must be equal X-No-Cache value from request header to prevent reading from cache
 
 # Plans? #
