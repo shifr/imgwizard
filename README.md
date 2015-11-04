@@ -64,7 +64,7 @@ Check [imgwizard] work after server start
 [nodes]: https://github.com/shifr/imgwizard/issues/13
 
 # Parameters on start? #
-```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -thumb /path_to_404_image.jpg -no-cache-key 123```
+```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
 
   - <b>-l</b>: Address to listen on (default - "localhost:8070")
   - <b>-c</b>: directory for cached files (default - "/tmp/imgwizard")
