@@ -79,6 +79,7 @@ const (
 
 var (
 	DEBUG            = false
+	WARNING          = false
 	DEFAULT_QUALITY  = 80
 	ChanPool         chan int
 	settings         Settings
@@ -336,7 +337,7 @@ func getOrCreateImage(sett Settings) []byte {
 	case "loc":
 		image, err = getLocalImage(&sett)
 		if err != nil {
-			log.Printf("Can't get orig local file - %s, reason - %s", sett.Context.Path, err)
+			warning("Can't get orig local file - %s, reason - %s", sett.Context.Path, err)
 			return image
 		}
 
@@ -344,7 +345,7 @@ func getOrCreateImage(sett Settings) []byte {
 		imgUrl := fmt.Sprintf("%s://%s", sett.Scheme, sett.Context.Path)
 		image, err = getRemoteImage(&sett, imgUrl, false)
 		if err != nil {
-			log.Println("Can't get orig remote file - %s, reason - %s", sett.Context.Path, err)
+			warning("Can't get orig remote file - %s, reason - %s", sett.Context.Path, err)
 			return image
 		}
 	}
@@ -353,7 +354,7 @@ func getOrCreateImage(sett Settings) []byte {
 	if !stringExists(sett.Context.Format, supportedFormats) {
 		err = c.Set(sett.Context.CachePath, image)
 		if err != nil {
-			log.Println("Can't set cache, reason - ", err)
+			warning("Can't set cache, reason - %s", err)
 		}
 		return image
 	}
@@ -361,13 +362,13 @@ func getOrCreateImage(sett Settings) []byte {
 	debug("Processing image")
 	buf, err := vips.Resize(image, sett.Options)
 	if err != nil {
-		log.Println("Can't resize image, reason - ", err)
+		warning("Can't resize image, reason - %s", err)
 	}
 
 	debug("Set to cache, key: %s", sett.Context.CachePath)
 	err = c.Set(sett.Context.CachePath, buf)
 	if err != nil {
-		log.Println("Can't set cache, reason - ", err)
+		warning("Can't set cache, reason - %s", err)
 	}
 
 	return buf
@@ -465,6 +466,10 @@ func init() {
 		DEBUG = true
 	}
 
+	if os.Getenv("WARNING_ENABLED") != "" {
+		WARNING = true
+	}
+
 	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
 	if err != nil {
 		debug("Making channel with default size")
@@ -485,6 +490,13 @@ func main() {
 
 func debug(s string, args ...interface{}) {
 	if !DEBUG {
+		return
+	}
+	log.Printf(s+"\n", args...)
+}
+
+func warning(s string, args ...interface{}) {
+	if !WARNING {
 		return
 	}
 	log.Printf(s+"\n", args...)
