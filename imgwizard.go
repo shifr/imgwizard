@@ -84,6 +84,7 @@ var (
 	ChanPool         chan int
 	settings         Settings
 	supportedFormats = []string{"jpg", "jpeg", "png"}
+	allowedFormats   = []string{"jpg", "jpeg", "png", "gif", "bmp", "svg"}
 	Crop             = map[string]vips.Gravity{
 		"top":    vips.NORTH,
 		"right":  vips.EAST,
@@ -155,8 +156,12 @@ func (s *Settings) loadSettings() {
 		medias = strings.Join(s.AllowedMedia, "|")
 	}
 
+	formats := strings.Join(allowedFormats, "|")
+
 	template := fmt.Sprintf(
-		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>%s.+)", proxyMark, sizes, medias)
+		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>((%s)(.+).(?i)(%s)))",
+		proxyMark, sizes, medias, formats)
+
 	s.UrlExp, _ = regexp.Compile(template)
 }
 
