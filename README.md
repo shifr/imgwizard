@@ -38,6 +38,8 @@ http://<b>192.168.0.1:4444</b>/<b>images</b>/<b>rem</b>/<b>462x</b>/<b>media.goo
 VIPS is a free image processing system. Compared to similar libraries, VIPS is fast and does not need much memory, see the [Speed and Memory Use][speed] page. As well as JPEG, TIFF, PNG and WebP images, it also supports scientific formats like FITS, OpenEXR, Matlab, Analyze, PFM, Radiance, OpenSlide and DICOM (via libMagick). (&copy; [vips wiki][libvips])
 
 ##### Mac OS #####
+```$ brew tap homebrew/science```
+
 ```$ brew install vips```
 
 ##### Debian based #####
