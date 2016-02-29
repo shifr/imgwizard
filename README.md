@@ -46,7 +46,22 @@ VIPS is a free image processing system. Compared to similar libraries, VIPS is f
 ```$ sudo apt-get install libvips-dev```
 
 ##### RedHat #####
-Check [this][centos]
+```$ yum install libwebp-devel glib2-devel libpng-devel libxml2-devel libjpeg-devel```
+
+```$ wget http://www.vips.ecs.soton.ac.uk/supported/7.38/vips-7.38.5.tar.gz```
+
+```$ tar xvzf vips-7.38.5.tar.gz; cd vips-7.38.5```
+
+```$ ./configure```
+
+```$ make```
+
+```$ make install```
+
+```$ echo '/usr/local/lib' > /etc/ld.so.conf.d/libvips.conf```
+
+```$ ldconfig -v```
+
 
 ### Installing imgwizard ###
   - ```go get github.com/shifr/imgwizard```
@@ -57,17 +72,16 @@ Check [this][centos]
 
 You will see "<b>ImgWizard started...</b>" 
 
-Check [imgwizard] work after server start 
+Check <a href="http://localhost:8070/images/rem/320x240/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg" target="_blank">imgwizard</a> work after server start 
 
-[imgwizard]: http://localhost:8070/images/rem/320x240/thumbs.dreamstime.com/z/cartoon-wizard-man-23333089.jpg
-[centos]: http://astonj.com/tech/how-to-install-vips-on-centos-libvips/
 [libvips]: http://www.vips.ecs.soton.ac.uk/index.php?title=VIPS
 [speed]: http://www.vips.ecs.soton.ac.uk/index.php?title=Speed_and_Memory_Use
 [nodes]: https://github.com/shifr/imgwizard/issues/13
 
 # Parameters on start? #
-```imgwizard -l localhost:9000 -c /tmp/my_cache_dir -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
-
+```DEBUG_ENABLED=1 WARNING_ENABLED=1 imgwizard -l localhost:9000 -c /tmp/my_cache_dir -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
+  - <b>DEBUG_ENABLED</b> (env): show all debug messages
+  - <b>WARNING_ENABLED</b> (env): show warning messages (when image not found/processed)
   - <b>-l</b>: Address to listen on (default - "localhost:8070")
   - <b>-c</b>: directory for cached files (default - "/tmp/imgwizard")
   - <b>-m</b>: comma separated list of allowed media (default - all enabled)
