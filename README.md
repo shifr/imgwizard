@@ -78,6 +78,11 @@ Check <a href="http://localhost:8070/images/rem/320x240/thumbs.dreamstime.com/z/
 [speed]: http://www.vips.ecs.soton.ac.uk/index.php?title=Speed_and_Memory_Use
 [nodes]: https://github.com/shifr/imgwizard/issues/13
 
+###Doesn't work?###
+Try to add PKG_CONFIG_PATH into environment:
+
+```export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig"```
+
 # Parameters on start? #
 ```DEBUG_ENABLED=1 WARNING_ENABLED=1 imgwizard -l localhost:9000 -c /tmp/my_cache_dir -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
   - <b>DEBUG_ENABLED</b> (env): show all debug messages
