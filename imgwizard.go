@@ -57,6 +57,7 @@ type Context struct {
 type Settings struct {
 	ListenAddr   string
 	CacheDir     string
+	S3BucketName string
 	Scheme       string
 	NoCacheKey   string
 	AllowedSizes []string
@@ -95,6 +96,7 @@ var (
 	allowedMedia = flag.String("m", "", "comma separated list of allowed media server hosts")
 	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
 	cacheDir     = flag.String("c", "/tmp/imgwizard", "directory for cached files")
+	s3BucketName = flag.String("s3-b", "", "AWS S3 cache bucket name")
 	dirsToSearch = flag.String("d", "", "comma separated list of directories to search requested file")
 	mark         = flag.String("mark", "images", "Mark for nginx")
 	noCacheKey   = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
@@ -122,6 +124,10 @@ func (s *Settings) loadSettings() {
 
 	s.ListenAddr = *listenAddr
 	s.CacheDir = *cacheDir
+
+	if *s3BucketName != "" {
+		s.S3BucketName = *s3BucketName
+	}
 
 	if *allowedMedia != "" {
 		s.AllowedMedia = strings.Split(*allowedMedia, ",")
@@ -191,8 +197,13 @@ func (s *Settings) makeCachePath() {
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
 
-	s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
-		"%s/%s/%s", s.CacheDir, subPath, cacheImageName))
+	if s.S3BucketName != "" {
+		s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
+			"%s/%s", subPath, cacheImageName))
+	} else {
+		s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
+			"%s/%s/%s", s.CacheDir, subPath, cacheImageName))
+	}
 
 	if s.Context.Query != "" {
 		s.Context.CachePath = fmt.Sprintf(
@@ -289,7 +300,8 @@ func getRemoteImage(s *Settings, url string, isNode bool) ([]byte, error) {
 }
 
 func checkCache(s *Settings) ([]byte, error) {
-	var c *cache.Cache
+	var c = cache.Cache{S3BucketName: s.S3BucketName}
+
 	var image []byte
 	var err error
 
@@ -328,7 +340,7 @@ func checkNodes(s *Settings) ([]byte, error) {
 // if image doesn't exist - creates it
 func getOrCreateImage(sett Settings) []byte {
 
-	var c *cache.Cache
+	var c = cache.Cache{S3BucketName: sett.S3BucketName}
 	var image []byte
 	var err error
 

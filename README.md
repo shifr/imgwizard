@@ -9,7 +9,9 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
   - Resize it
   - Crop it
   - Change quality 
-  - Cache resized image to file system and get it on next request
+  - Cache resized image and fetch it on next request:
+        - to file system
+        - to Amazon S3
   - Return WebP images if browser supports it
 
 # How to use?
@@ -85,10 +87,15 @@ Try to add PKG_CONFIG_PATH into environment:
 
 # Parameters on start? #
 ```DEBUG_ENABLED=1 WARNING_ENABLED=1 imgwizard -l localhost:9000 -c /tmp/my_cache_dir -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
-  - <b>DEBUG_ENABLED</b> (env): show all debug messages
-  - <b>WARNING_ENABLED</b> (env): show warning messages (when image not found/processed)
+
+####ENV####
+  - <b>DEBUG_ENABLED</b>: show all debug messages
+  - <b>WARNING_ENABLED</b>: show warning messages (when image not found/processed)
+
+####Flags###
   - <b>-l</b>: Address to listen on (default - "localhost:8070")
-  - <b>-c</b>: directory for cached files (default - "/tmp/imgwizard")
+  - <b>-s3-b</b>: Amazon S3 bucket name where cache will be located (for current wizard node).
+  - <b>-c</b>: directory for cached files (<b>WORKS</b> if "-s3-b" not specified, default - "/tmp/imgwizard")
   - <b>-m</b>: comma separated list of allowed media (default - all enabled)
   - <b>-s</b>: comma separated list of allowed sizes (default - all enabled)
   - <b>-d</b>: comma separated list of directories to search original file
@@ -96,6 +103,13 @@ Try to add PKG_CONFIG_PATH into environment:
   - <b>-mark</b>: mark (default - images)
   - <b>-nodes</b>: comma separated list of other imgwizard nodes for cache check (see [nodes])
   - <b> -no-cache-key</b>: secret key that must be equal X-No-Cache value from request header to prevent reading from cache
+
+####Use Amazon S3 for caching?####
+Then, you should specify more ENV variables:
+
+  - <b>AWS_REGION</b>: where to send requests. (Example: "us-west-2") //Required
+  - <b>AWS_ACCESS_KEY_ID</b>: your access key id
+  - <b>AWS_SECRET_ACCESS_KEY</b>: your secret access key
 
 # Plans? #
 Yes, a lot.
