@@ -1,3 +1,7 @@
+# ImgWizard - fast, light, easy to use
+
+[![Build Status](https://travis-ci.org/shifr/imgwizard.svg?branch=master)](https://travis-ci.org/shifr/imgwizard)
+
 # What is it?
 ImgWizard is a small server written in Go as faster alternative for [thumbor][thumbor]
 
