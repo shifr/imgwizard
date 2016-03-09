@@ -90,7 +90,7 @@ Try to add PKG_CONFIG_PATH into environment:
 ```export PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig"```
 
 # Parameters on start? #
-```DEBUG_ENABLED=1 WARNING_ENABLED=1 imgwizard -l localhost:9000 -c /tmp/my_cache_dir -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
+```DEBUG_ENABLED=1 WARNING_ENABLED=1 imgwizard -l localhost:9000 -c /tmp/my_cache_dir -thumb /tmp/404.jpg -d /v1/uploads,/v2/uploads -m media1.com,media2.com -s 100x100,480x,x200 -q 80 -mark imgw -nodes 127.0.0.1:8071,127.0.0.1:8072 -no-cache-key 123```
 
 ####ENV####
   - <b>DEBUG_ENABLED</b>: show all debug messages
@@ -100,6 +100,7 @@ Try to add PKG_CONFIG_PATH into environment:
   - <b>-l</b>: Address to listen on (default - "localhost:8070")
   - <b>-s3-b</b>: Amazon S3 bucket name where cache will be located (for current wizard node).
   - <b>-c</b>: directory for cached files (<b>WORKS</b> if "-s3-b" not specified, default - "/tmp/imgwizard")
+  - <b>-thumb</b>: absolute path to default image if original not found (optional)
   - <b>-m</b>: comma separated list of allowed media (default - all enabled)
   - <b>-s</b>: comma separated list of allowed sizes (default - all enabled)
   - <b>-d</b>: comma separated list of directories to search original file
