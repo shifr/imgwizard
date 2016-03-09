@@ -60,6 +60,7 @@ type Settings struct {
 	S3BucketName string
 	Scheme       string
 	NoCacheKey   string
+	Default404   string
 	AllowedSizes []string
 	AllowedMedia []string
 	Directories  []string
@@ -97,6 +98,7 @@ var (
 	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
 	cacheDir     = flag.String("c", "/tmp/imgwizard", "directory for cached files")
 	s3BucketName = flag.String("s3-b", "", "AWS S3 cache bucket name")
+	Default404   = flag.String("thumb", "", "path to default image if original not found")
 	dirsToSearch = flag.String("d", "", "comma separated list of directories to search requested file")
 	mark         = flag.String("mark", "images", "Mark for nginx")
 	noCacheKey   = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
@@ -124,10 +126,8 @@ func (s *Settings) loadSettings() {
 
 	s.ListenAddr = *listenAddr
 	s.CacheDir = *cacheDir
-
-	if *s3BucketName != "" {
-		s.S3BucketName = *s3BucketName
-	}
+	s.S3BucketName = *s3BucketName
+	s.Default404 = *Default404
 
 	if *allowedMedia != "" {
 		s.AllowedMedia = strings.Split(*allowedMedia, ",")
@@ -239,13 +239,18 @@ func fileExists(s *Settings) (string, error) {
 }
 
 // getLocalImage fetches original image from file system
-func getLocalImage(s *Settings) ([]byte, error) {
+func getLocalImage(s *Settings, def bool) ([]byte, error) {
 	var image []byte
 	var err error
+	var filePath string
 
-	filePath, err := fileExists(s)
-	if err != nil {
-		return image, err
+	if def {
+		filePath = s.Default404
+	} else {
+		filePath, err = fileExists(s)
+		if err != nil {
+			return image, err
+		}
 	}
 
 	file, err := os.Open(filePath)
@@ -352,9 +357,17 @@ func getOrCreateImage(sett Settings) []byte {
 
 	switch sett.Context.Storage {
 	case "loc":
-		image, err = getLocalImage(&sett)
+		image, err = getLocalImage(&sett, false)
 		if err != nil {
 			warning("Can't get orig local file - %s, reason - %s", sett.Context.Path, err)
+			if sett.Default404 != "" {
+				image, err = getLocalImage(&sett, true)
+
+				if err != nil {
+					warning("Default 404 image was set but not found", sett.Default404)
+					return image
+				}
+			}
 			return image
 		}
 
@@ -363,6 +376,14 @@ func getOrCreateImage(sett Settings) []byte {
 		image, err = getRemoteImage(&sett, imgUrl, false)
 		if err != nil {
 			warning("Can't get orig remote file - %s, reason - %s", sett.Context.Path, err)
+			if sett.Default404 != "" {
+				image, err = getLocalImage(&sett, true)
+
+				if err != nil {
+					warning("Default 404 image was set but not found", sett.Default404)
+					return image
+				}
+			}
 			return image
 		}
 	}
