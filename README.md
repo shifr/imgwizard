@@ -1,24 +1,24 @@
-# ImgWizard - fast, light, easy to use
+# ImgWizard - fast, light, easy to use #
 
 [![Build Status](https://travis-ci.org/shifr/imgwizard.svg?branch=master)](https://travis-ci.org/shifr/imgwizard)
 
-# What is it?
+# What is it? #
 ImgWizard is a small server written in Go as faster alternative for [thumbor][thumbor]
 
 [thumbor]: https://github.com/thumbor/thumbor
 
-# What it can do?
+# What it can do? #
 
   - Fetch image from local file system or remote media
   - Resize it
   - Crop it
   - Change quality 
   - Cache resized image and fetch it on next request:
-        - to file system
-        - to Amazon S3
+      - to file system
+      - to Amazon S3
   - Return WebP images if browser supports it
 
-# How to use?
+# How to use? #
 
 http://{server}/{mark}/{storage}/{size}/{path_to_file}?{params}
 
@@ -116,5 +116,10 @@ Then, you should specify more ENV variables:
   - <b>AWS_ACCESS_KEY_ID</b>: your access key id
   - <b>AWS_SECRET_ACCESS_KEY</b>: your secret access key
 
+# Who are already using it? #
+  - <a href="https://modnakasta.ua/" target="_blank">modnakasta.ua</a>
+  - <a href="https://askmed.com/" target="_blank">askmed.com</a>
+  - <a href="https://kasta.ua/" target="_blank">kasta.ua</a>
+  
 # Plans? #
 Yes, a lot.
