@@ -499,6 +499,7 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 func init() {
 	flag.Parse()
 	settings.loadSettings()
+	log.SetOutput(os.Stdout)
 
 	if os.Getenv("DEBUG_ENABLED") != "" {
 		DEBUG = true
