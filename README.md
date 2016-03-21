@@ -119,7 +119,6 @@ Then, you should specify more ENV variables:
 # Who are already using it? #
   - <a href="https://modnakasta.ua/" target="_blank">modnakasta.ua</a>
   - <a href="https://askmed.com/" target="_blank">askmed.com</a>
-  - <a href="https://kasta.ua/" target="_blank">kasta.ua</a>
   
 # Plans? #
 Yes, a lot.
