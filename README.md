@@ -46,7 +46,7 @@ VIPS is a free image processing system. Compared to similar libraries, VIPS is f
 ##### Mac OS #####
 ```$ brew tap homebrew/science```
 
-```$ brew install vips```
+```$ brew install vips --with-webp```
 
 ##### Debian based #####
 ```$ sudo apt-get install libvips-dev```
