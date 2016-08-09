@@ -57,7 +57,6 @@ type Context struct {
 type Settings struct {
 	ListenAddr   string
 	CacheDir     string
-	S3BucketName string
 	Scheme       string
 	NoCacheKey   string
 	Default404   string
@@ -85,6 +84,7 @@ var (
 	DEFAULT_QUALITY  = 80
 	ChanPool         chan int
 	settings         Settings
+	Cache            *cache.Cache
 	supportedFormats = []string{"jpg", "jpeg", "png"}
 	allowedFormats   = []string{"jpg", "jpeg", "png", "gif", "bmp", "svg"}
 	Crop             = map[string]vips.Gravity{
@@ -93,17 +93,18 @@ var (
 		"bottom": vips.SOUTH,
 		"left":   vips.WEST,
 	}
-	listenAddr   = flag.String("l", "127.0.0.1:8070", "Address to listen on")
-	allowedMedia = flag.String("m", "", "comma separated list of allowed media server hosts")
-	allowedSizes = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir     = flag.String("c", "/tmp/imgwizard", "directory for cached files")
-	s3BucketName = flag.String("s3-b", "", "AWS S3 cache bucket name")
-	Default404   = flag.String("thumb", "", "path to default image if original not found")
-	dirsToSearch = flag.String("d", "", "comma separated list of directories to search requested file")
-	mark         = flag.String("mark", "images", "Mark for nginx")
-	noCacheKey   = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
-	quality      = flag.Int("q", 0, "image quality after resize")
-	nodes        = flag.String("nodes", "", "Other imgwizard nodes to ask before process image")
+	listenAddr         = flag.String("l", "127.0.0.1:8070", "Address to listen on")
+	allowedMedia       = flag.String("m", "", "comma separated list of allowed media server hosts")
+	allowedSizes       = flag.String("s", "", "comma separated list of allowed sizes")
+	cacheDir           = flag.String("c", "/tmp/imgwizard", "directory for cached files")
+	S3BucketName       = flag.String("s3-b", "", "AWS S3 cache bucket name")
+	AzureContainerName = flag.String("az", "", "Microsoft Azure Storage container name")
+	Default404         = flag.String("thumb", "", "path to default image if original not found")
+	dirsToSearch       = flag.String("d", "", "comma separated list of directories to search requested file")
+	mark               = flag.String("mark", "images", "Mark for nginx")
+	noCacheKey         = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
+	quality            = flag.Int("q", 0, "image quality after resize")
+	nodes              = flag.String("nodes", "", "Other imgwizard nodes to ask before process image")
 )
 
 // loadSettings loads settings from settings.json
@@ -126,7 +127,6 @@ func (s *Settings) loadSettings() {
 
 	s.ListenAddr = *listenAddr
 	s.CacheDir = *cacheDir
-	s.S3BucketName = *s3BucketName
 	s.Default404 = *Default404
 
 	if *allowedMedia != "" {
@@ -197,7 +197,7 @@ func (s *Settings) makeCachePath() {
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 	}
 
-	if s.S3BucketName != "" {
+	if *S3BucketName != "" || *AzureContainerName != "" {
 		s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
 			"%s/%s", subPath, cacheImageName))
 	} else {
@@ -305,13 +305,12 @@ func getRemoteImage(s *Settings, url string, isNode bool) ([]byte, error) {
 }
 
 func checkCache(s *Settings) ([]byte, error) {
-	var c = cache.Cache{S3BucketName: s.S3BucketName}
 
 	var image []byte
 	var err error
 
 	debug("Get from cache, key: %s", s.Context.CachePath)
-	if image, err = c.Get(s.Context.CachePath); err == nil {
+	if image, err = Cache.Get(s.Context.CachePath); err == nil {
 		return image, nil
 	}
 
@@ -345,7 +344,6 @@ func checkNodes(s *Settings) ([]byte, error) {
 // if image doesn't exist - creates it
 func getOrCreateImage(sett Settings) []byte {
 
-	var c = cache.Cache{S3BucketName: sett.S3BucketName}
 	var image []byte
 	var err error
 
@@ -390,7 +388,7 @@ func getOrCreateImage(sett Settings) []byte {
 
 	debug("Check image format")
 	if !stringExists(sett.Context.Format, supportedFormats) {
-		err = c.Set(sett.Context.CachePath, image)
+		err = Cache.Set(sett.Context.CachePath, image)
 		if err != nil {
 			warning("Can't set cache, reason - %s", err)
 		}
@@ -404,7 +402,7 @@ func getOrCreateImage(sett Settings) []byte {
 	}
 
 	debug("Set to cache, key: %s", sett.Context.CachePath)
-	err = c.Set(sett.Context.CachePath, buf)
+	err = Cache.Set(sett.Context.CachePath, buf)
 	if err != nil {
 		warning("Can't set cache, reason - %s", err)
 	}
@@ -497,8 +495,6 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 }
 
 func init() {
-	flag.Parse()
-	settings.loadSettings()
 	log.SetOutput(os.Stdout)
 
 	if os.Getenv("DEBUG_ENABLED") != "" {
@@ -520,6 +516,18 @@ func init() {
 }
 
 func main() {
+	var err error
+
+	flag.Parse()
+	settings.loadSettings()
+
+	Cache, err = cache.NewCache(*S3BucketName, *AzureContainerName)
+
+	if err != nil {
+		warning("Could not create cache object, reason - %s", err)
+		return
+	}
+
 	r := new(RegexpHandler)
 	r.HandleFunc(settings.UrlExp, fetchImage)
 
