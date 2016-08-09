@@ -16,6 +16,7 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
   - Cache resized image and fetch it on next request:
       - to file system
       - to Amazon S3
+      - to Microsoft Azure Storage
   - Return WebP images if browser supports it
 
 # How to use? #
@@ -99,6 +100,7 @@ Try to add PKG_CONFIG_PATH into environment:
 ####Flags###
   - <b>-l</b>: Address to listen on (default - "localhost:8070")
   - <b>-s3-b</b>: Amazon S3 bucket name where cache will be located (for current wizard node).
+  - <b>-az</b>: Microsoft Azure Storage container name where cache will be located (for current wizard node).
   - <b>-c</b>: directory for cached files (<b>WORKS</b> if "-s3-b" not specified, default - "/tmp/imgwizard")
   - <b>-thumb</b>: absolute path to default image if original not found (optional)
   - <b>-m</b>: comma separated list of allowed media (default - all enabled)
@@ -115,6 +117,12 @@ Then, you should specify more ENV variables:
   - <b>AWS_REGION</b>: where to send requests. (Example: "us-west-2") //Required
   - <b>AWS_ACCESS_KEY_ID</b>: your access key id
   - <b>AWS_SECRET_ACCESS_KEY</b>: your secret access key
+
+####Use Azure Storage for caching?####
+Then, you should specify more ENV variables:
+
+  - <b>AZURE_ACCOUNT_NAME</b>: your azure account name
+  - <b>AZURE_ACCOUNT_KEY</b>: your key for SDK auth
 
 # Who are already using it? #
   - <a href="https://modnakasta.ua/" target="_blank">modnakasta.ua</a>
