@@ -112,14 +112,14 @@ Try to add PKG_CONFIG_PATH into environment:
   - <b> -no-cache-key</b>: secret key that must be equal X-No-Cache value from request header to prevent reading from cache
 
 ####Use Amazon S3 for caching?####
-Then, you should specify more ENV variables:
+Then you should specify more ENV variables:
 
   - <b>AWS_REGION</b>: where to send requests. (Example: "us-west-2") //Required
   - <b>AWS_ACCESS_KEY_ID</b>: your access key id
   - <b>AWS_SECRET_ACCESS_KEY</b>: your secret access key
 
 ####Use Azure Storage for caching?####
-Then, you should specify more ENV variables:
+Then you should specify more ENV variables:
 
   - <b>AZURE_ACCOUNT_NAME</b>: your azure account name
   - <b>AZURE_ACCOUNT_KEY</b>: your key for SDK auth
