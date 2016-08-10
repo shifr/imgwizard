@@ -78,17 +78,17 @@ func TestCachePath(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		settings := Settings{}
+		context := Context{}
 
-		settings.CacheDir = test.CacheDir
-		settings.Context.Storage = test.Storage
-		settings.Context.Path = test.Path
-		settings.Options.Width = test.Width
-		settings.Options.Height = test.Height
+		CacheDir = test.CacheDir
+		context.Storage = test.Storage
+		context.Path = test.Path
+		context.Options.Width = test.Width
+		context.Options.Height = test.Height
 
-		settings.makeCachePath()
+		context.makeCachePath()
 
-		CachePath := settings.Context.CachePath
+		CachePath := context.CachePath
 
 		if test.CachePath != CachePath {
 			t.Errorf("%d. makeCachePath returned %v, needed %v", i, CachePath, test.CachePath)

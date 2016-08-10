@@ -44,22 +44,20 @@ func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type Context struct {
 	NoCache    bool
 	OnlyCache  bool
+	Width      int
+	Height     int
 	Path       string
 	RequestURI string
 	Format     string
 	CachePath  string
 	Storage    string
 	Query      string
-	Width      int
-	Height     int
+
+	Options vips.Options
 }
 
 type Settings struct {
-	ListenAddr   string
-	CacheDir     string
 	Scheme       string
-	NoCacheKey   string
-	Default404   string
 	AllowedSizes []string
 	AllowedMedia []string
 	Directories  []string
@@ -67,7 +65,6 @@ type Settings struct {
 	UrlExp       *regexp.Regexp
 
 	Context Context
-	Options vips.Options
 }
 
 const (
@@ -79,36 +76,113 @@ const (
 )
 
 var (
-	DEBUG            = false
-	WARNING          = false
-	DEFAULT_QUALITY  = 80
-	ChanPool         chan int
-	settings         Settings
-	Cache            *cache.Cache
-	supportedFormats = []string{"jpg", "jpeg", "png"}
-	allowedFormats   = []string{"jpg", "jpeg", "png", "gif", "bmp", "svg"}
+	DEBUG           = false
+	WARNING         = false
+	DEFAULT_QUALITY = 80
+
+	settings           Settings
+	Cache              *cache.Cache
+	Options            vips.Options
+	ChanPool           chan int
+	ListenAddr         string
+	AllowedMedia       string
+	AllowedSizes       string
+	CacheDir           string
+	S3BucketName       string
+	AzureContainerName string
+	Default404         string
+	DirsToSearch       string
+	Mark               string
+	NoCacheKey         string
+	Nodes              string
+	Quality            int
+
+	SupportedFormats = []string{"jpg", "jpeg", "png"}
+	AllowedFormats   = []string{"jpg", "jpeg", "png", "gif", "bmp", "svg"}
 	Crop             = map[string]vips.Gravity{
 		"top":    vips.NORTH,
 		"right":  vips.EAST,
 		"bottom": vips.SOUTH,
 		"left":   vips.WEST,
 	}
-	listenAddr         = flag.String("l", "127.0.0.1:8070", "Address to listen on")
-	allowedMedia       = flag.String("m", "", "comma separated list of allowed media server hosts")
-	allowedSizes       = flag.String("s", "", "comma separated list of allowed sizes")
-	cacheDir           = flag.String("c", "/tmp/imgwizard", "directory for cached files")
-	S3BucketName       = flag.String("s3-b", "", "AWS S3 cache bucket name")
-	AzureContainerName = flag.String("az", "", "Microsoft Azure Storage container name")
-	Default404         = flag.String("thumb", "", "path to default image if original not found")
-	dirsToSearch       = flag.String("d", "", "comma separated list of directories to search requested file")
-	mark               = flag.String("mark", "images", "Mark for nginx")
-	noCacheKey         = flag.String("no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
-	quality            = flag.Int("q", 0, "image quality after resize")
-	nodes              = flag.String("nodes", "", "Other imgwizard nodes to ask before process image")
 )
 
-// loadSettings loads settings from settings.json
-// and from command-line
+// makeCachePath generates cache path for resized image
+func (c *Context) makeCachePath() {
+	var subPath string
+	var cacheImageName string
+
+	pathParts := strings.Split(c.Path, "/")
+	lastIndex := len(pathParts) - 1
+	imageData := strings.Split(pathParts[lastIndex], ".")
+	imageName, imageFormat := imageData[0], strings.ToLower(imageData[1])
+	c.Format = imageFormat
+
+	if c.Options.Webp {
+		cacheImageName = fmt.Sprintf(
+			"%s_%dx%d_webp_.%s", imageName, c.Options.Width, c.Options.Height, imageFormat)
+	} else {
+		cacheImageName = fmt.Sprintf(
+			"%s_%dx%d.%s", imageName, c.Options.Width, c.Options.Height, imageFormat)
+	}
+
+	switch c.Storage {
+	case "loc":
+		subPath = strings.Join(pathParts[:lastIndex], "/")
+	case "rem":
+		subPath = strings.Join(pathParts[1:lastIndex], "/")
+	}
+
+	if S3BucketName != "" || AzureContainerName != "" {
+		c.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
+			"%s/%s", subPath, cacheImageName))
+	} else {
+		c.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
+			"%s/%s/%s", CacheDir, subPath, cacheImageName))
+	}
+
+	if c.Query != "" {
+		c.CachePath = fmt.Sprintf(
+			"%s?%s", c.CachePath, c.Query)
+	}
+}
+
+func (c *Context) Fill(req *http.Request) {
+	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
+	noCacheKey := req.Header.Get(NO_CACHE_HEADER)
+	onlyCacheHeader := req.Header.Get(ONLY_CACHE_HEADER)
+	params := parseVars(req)
+	sizes := strings.Split(params["size"], "x")
+	c.Options = Options
+	c.Options.Gravity = vips.CENTRE
+
+	if crop := req.FormValue("crop"); crop != "" {
+		for _, g := range strings.Split(crop, ",") {
+			if v, ok := Crop[g]; ok {
+				c.Options.Gravity = c.Options.Gravity | v
+			}
+		}
+	}
+
+	if q := req.FormValue("q"); q != "" {
+		c.Options.Quality, _ = strconv.Atoi(q)
+	}
+
+	c.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
+	c.Options.Width, _ = strconv.Atoi(sizes[0])
+	c.Options.Height, _ = strconv.Atoi(sizes[1])
+
+	c.NoCache = NoCacheKey != "" && NoCacheKey == noCacheKey
+	c.OnlyCache = onlyCacheHeader != ""
+	c.RequestURI = req.RequestURI
+	c.Storage = params["storage"]
+	c.Path = params["path"]
+	c.Query = params["query"]
+
+	c.makeCachePath()
+}
+
+// loadSettings loads settings from command-line
 func (s *Settings) loadSettings() {
 
 	s.Scheme = "http"
@@ -116,43 +190,34 @@ func (s *Settings) loadSettings() {
 	s.AllowedMedia = nil
 
 	//defaults for vips
-	s.Options.Crop = true
-	s.Options.Enlarge = true
-	s.Options.Extend = vips.EXTEND_WHITE
-	s.Options.Interpolator = vips.BILINEAR
+	Options.Crop = true
+	Options.Enlarge = true
+	Options.Extend = vips.EXTEND_WHITE
+	Options.Interpolator = vips.BILINEAR
 
 	var sizes = "[0-9]*x[0-9]*"
 	var medias = ""
-	var proxyMark = *mark
 
-	s.ListenAddr = *listenAddr
-	s.CacheDir = *cacheDir
-	s.Default404 = *Default404
-
-	if *allowedMedia != "" {
-		s.AllowedMedia = strings.Split(*allowedMedia, ",")
+	if AllowedMedia != "" {
+		s.AllowedMedia = strings.Split(AllowedMedia, ",")
 	}
 
-	if *allowedSizes != "" {
-		s.AllowedSizes = strings.Split(*allowedSizes, ",")
+	if AllowedSizes != "" {
+		s.AllowedSizes = strings.Split(AllowedSizes, ",")
 	}
 
-	if *dirsToSearch != "" {
-		s.Directories = strings.Split(*dirsToSearch, ",")
+	if DirsToSearch != "" {
+		s.Directories = strings.Split(DirsToSearch, ",")
 	}
 
-	if *noCacheKey != "" {
-		s.NoCacheKey = *noCacheKey
+	if Nodes != "" {
+		s.Nodes = strings.Split(Nodes, ",")
 	}
 
-	if *nodes != "" {
-		s.Nodes = strings.Split(*nodes, ",")
+	if Quality != 0 {
+		DEFAULT_QUALITY = Quality
 	}
-
-	if *quality != 0 {
-		DEFAULT_QUALITY = *quality
-	}
-	s.Options.Quality = DEFAULT_QUALITY
+	Options.Quality = DEFAULT_QUALITY
 
 	if len(s.AllowedSizes) > 0 {
 		sizes = strings.Join(s.AllowedSizes, "|")
@@ -162,65 +227,25 @@ func (s *Settings) loadSettings() {
 		medias = strings.Join(s.AllowedMedia, "|")
 	}
 
-	formats := strings.Join(allowedFormats, "|")
+	formats := strings.Join(AllowedFormats, "|")
 
 	template := fmt.Sprintf(
 		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>((%s)(.+).(?i)(%s)))",
-		proxyMark, sizes, medias, formats)
+		Mark, sizes, medias, formats)
 
 	s.UrlExp, _ = regexp.Compile(template)
 }
 
-// makeCachePath generates cache path from resized image
-func (s *Settings) makeCachePath() {
-	var subPath string
-	var cacheImageName string
-
-	pathParts := strings.Split(s.Context.Path, "/")
-	lastIndex := len(pathParts) - 1
-	imageData := strings.Split(pathParts[lastIndex], ".")
-	imageName, imageFormat := imageData[0], strings.ToLower(imageData[1])
-	s.Context.Format = imageFormat
-
-	if s.Options.Webp {
-		cacheImageName = fmt.Sprintf(
-			"%s_%dx%d_webp_.%s", imageName, s.Options.Width, s.Options.Height, imageFormat)
-	} else {
-		cacheImageName = fmt.Sprintf(
-			"%s_%dx%d.%s", imageName, s.Options.Width, s.Options.Height, imageFormat)
-	}
-
-	switch s.Context.Storage {
-	case "loc":
-		subPath = strings.Join(pathParts[:lastIndex], "/")
-	case "rem":
-		subPath = strings.Join(pathParts[1:lastIndex], "/")
-	}
-
-	if *S3BucketName != "" || *AzureContainerName != "" {
-		s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
-			"%s/%s", subPath, cacheImageName))
-	} else {
-		s.Context.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
-			"%s/%s/%s", s.CacheDir, subPath, cacheImageName))
-	}
-
-	if s.Context.Query != "" {
-		s.Context.CachePath = fmt.Sprintf(
-			"%s?%s", s.Context.CachePath, s.Context.Query)
-	}
-}
-
-func fileExists(s *Settings) (string, error) {
+func fileExists(ctx *Context) (string, error) {
 	var filePath string
 	var err error
 
 	debug("Trying to find local image")
-	s.Context.Path, _ = url.QueryUnescape(s.Context.Path)
+	ctx.Path, _ = url.QueryUnescape(ctx.Path)
 
-	if len(s.Directories) > 0 {
-		for _, dir := range s.Directories {
-			filePath = path.Join("/", dir, s.Context.Path)
+	if len(settings.Directories) > 0 {
+		for _, dir := range settings.Directories {
+			filePath = path.Join("/", dir, ctx.Path)
 			if _, err = os.Stat(filePath); err == nil {
 				return filePath, nil
 			}
@@ -228,7 +253,7 @@ func fileExists(s *Settings) (string, error) {
 		return "", err
 	}
 
-	filePath = path.Join("/", s.Context.Path)
+	filePath = path.Join("/", ctx.Path)
 
 	if _, err = os.Stat(filePath); os.IsNotExist(err) {
 		return "", err
@@ -239,15 +264,15 @@ func fileExists(s *Settings) (string, error) {
 }
 
 // getLocalImage fetches original image from file system
-func getLocalImage(s *Settings, def bool) ([]byte, error) {
+func getLocalImage(ctx *Context, def bool) ([]byte, error) {
 	var image []byte
 	var err error
 	var filePath string
 
 	if def {
-		filePath = s.Default404
+		filePath = Default404
 	} else {
-		filePath, err = fileExists(s)
+		filePath, err = fileExists(ctx)
 		if err != nil {
 			return image, err
 		}
@@ -272,7 +297,7 @@ func getLocalImage(s *Settings, def bool) ([]byte, error) {
 }
 
 // getRemoteImage fetches original image by http url
-func getRemoteImage(s *Settings, url string, isNode bool) ([]byte, error) {
+func getRemoteImage(ctx *Context, url string, isNode bool) ([]byte, error) {
 	var image []byte
 	var client = &http.Client{}
 
@@ -283,7 +308,7 @@ func getRemoteImage(s *Settings, url string, isNode bool) ([]byte, error) {
 	if isNode {
 		req.Header.Set(ONLY_CACHE_HEADER, "true")
 
-		if s.Options.Webp {
+		if ctx.Options.Webp {
 			req.Header.Set("Accept", WEBP_HEADER)
 		}
 	}
@@ -304,19 +329,19 @@ func getRemoteImage(s *Settings, url string, isNode bool) ([]byte, error) {
 	return image, nil
 }
 
-func checkCache(s *Settings) ([]byte, error) {
+func checkCache(ctx *Context) ([]byte, error) {
 
 	var image []byte
 	var err error
 
-	debug("Get from cache, key: %s", s.Context.CachePath)
-	if image, err = Cache.Get(s.Context.CachePath); err == nil {
+	debug("Get from cache, key: %s", ctx.CachePath)
+	if image, err = Cache.Get(ctx.CachePath); err == nil {
 		return image, nil
 	}
 
-	if len(s.Nodes) > 0 && !s.Context.OnlyCache {
+	if len(settings.Nodes) > 0 && !ctx.OnlyCache {
 		debug("Checking other nodes")
-		if image, err = checkNodes(s); err == nil {
+		if image, err = checkNodes(ctx); err == nil {
 			return image, nil
 		}
 	}
@@ -325,13 +350,13 @@ func checkCache(s *Settings) ([]byte, error) {
 	return image, err
 }
 
-func checkNodes(s *Settings) ([]byte, error) {
+func checkNodes(ctx *Context) ([]byte, error) {
 	var image []byte
 	var err error
 
-	for _, node := range s.Nodes {
-		reqUrl := fmt.Sprintf("%s://%s%s", s.Scheme, node, s.Context.RequestURI)
-		if image, err = getRemoteImage(s, reqUrl, true); err == nil {
+	for _, node := range settings.Nodes {
+		reqUrl := fmt.Sprintf("%s://%s%s", settings.Scheme, node, ctx.RequestURI)
+		if image, err = getRemoteImage(ctx, reqUrl, true); err == nil {
 			debug("Found at node: %s", node)
 			return image, nil
 		}
@@ -342,27 +367,27 @@ func checkNodes(s *Settings) ([]byte, error) {
 
 // getOrCreateImage check cache path for requested image
 // if image doesn't exist - creates it
-func getOrCreateImage(sett Settings) []byte {
+func getOrCreateImage(ctx *Context) []byte {
 
 	var image []byte
 	var err error
 
-	if !sett.Context.NoCache {
-		if image, err = checkCache(&sett); err == nil {
+	if !ctx.NoCache {
+		if image, err = checkCache(ctx); err == nil {
 			return image
 		}
 	}
 
-	switch sett.Context.Storage {
+	switch ctx.Storage {
 	case "loc":
-		image, err = getLocalImage(&sett, false)
+		image, err = getLocalImage(ctx, false)
 		if err != nil {
-			warning("Can't get orig local file - %s, reason - %s", sett.Context.Path, err)
-			if sett.Default404 != "" {
-				image, err = getLocalImage(&sett, true)
+			warning("Can't get orig local file - %s, reason - %s", ctx.Path, err)
+			if Default404 != "" {
+				image, err = getLocalImage(ctx, true)
 
 				if err != nil {
-					warning("Default 404 image was set but not found", sett.Default404)
+					warning("Default 404 image was set but not found", Default404)
 					return image
 				}
 			}
@@ -370,15 +395,15 @@ func getOrCreateImage(sett Settings) []byte {
 		}
 
 	case "rem":
-		imgUrl := fmt.Sprintf("%s://%s", sett.Scheme, sett.Context.Path)
-		image, err = getRemoteImage(&sett, imgUrl, false)
+		imgUrl := fmt.Sprintf("%s://%s", settings.Scheme, ctx.Path)
+		image, err = getRemoteImage(ctx, imgUrl, false)
 		if err != nil {
-			warning("Can't get orig remote file - %s, reason - %s", sett.Context.Path, err)
-			if sett.Default404 != "" {
-				image, err = getLocalImage(&sett, true)
+			warning("Can't get orig remote file - %s, reason - %s", ctx.Path, err)
+			if Default404 != "" {
+				image, err = getLocalImage(ctx, true)
 
 				if err != nil {
-					warning("Default 404 image was set but not found", sett.Default404)
+					warning("Default 404 image was set but not found", Default404)
 					return image
 				}
 			}
@@ -387,8 +412,8 @@ func getOrCreateImage(sett Settings) []byte {
 	}
 
 	debug("Check image format")
-	if !stringExists(sett.Context.Format, supportedFormats) {
-		err = Cache.Set(sett.Context.CachePath, image)
+	if !stringExists(ctx.Format, SupportedFormats) {
+		err = Cache.Set(ctx.CachePath, image)
 		if err != nil {
 			warning("Can't set cache, reason - %s", err)
 		}
@@ -396,13 +421,14 @@ func getOrCreateImage(sett Settings) []byte {
 	}
 
 	debug("Processing image")
-	buf, err := vips.Resize(image, sett.Options)
+	buf, err := vips.Resize(image, ctx.Options)
 	if err != nil {
 		warning("Can't resize image, reason - %s", err)
+		return image
 	}
 
-	debug("Set to cache, key: %s", sett.Context.CachePath)
-	err = Cache.Set(sett.Context.CachePath, buf)
+	debug("Set to cache, key: %s", ctx.CachePath)
+	err = Cache.Set(ctx.CachePath, buf)
 	if err != nil {
 		warning("Can't set cache, reason - %s", err)
 	}
@@ -431,46 +457,16 @@ func parseVars(req *http.Request) map[string]string {
 }
 
 func fetchImage(rw http.ResponseWriter, req *http.Request) {
-	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
-	noCacheKey := req.Header.Get(NO_CACHE_HEADER)
-	onlyCache := req.Header.Get(ONLY_CACHE_HEADER)
-	params := parseVars(req)
-	sizes := strings.Split(params["size"], "x")
-	sett := settings
+	ChanPool <- 1
 
 	var resultImage []byte
 	var err error
 
-	sett.Options.Gravity = vips.CENTRE
-	if crop := req.FormValue("crop"); crop != "" {
-		for _, g := range strings.Split(crop, ",") {
-			if v, ok := Crop[g]; ok {
-				sett.Options.Gravity = sett.Options.Gravity | v
-			}
-		}
-	}
+	context := Context{}
+	context.Fill(req)
 
-	if q := req.FormValue("q"); q != "" {
-		sett.Options.Quality, _ = strconv.Atoi(q)
-	}
-
-	sett.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
-	sett.Options.Width, _ = strconv.Atoi(sizes[0])
-	sett.Options.Height, _ = strconv.Atoi(sizes[1])
-
-	sett.Context.NoCache = sett.NoCacheKey != "" && sett.NoCacheKey == noCacheKey
-	sett.Context.RequestURI = req.RequestURI
-	sett.Context.Storage = params["storage"]
-	sett.Context.Path = params["path"]
-	sett.Context.Query = params["query"]
-
-	sett.makeCachePath()
-
-	ChanPool <- 1
-
-	if onlyCache != "" {
-		sett.Context.OnlyCache = true
-		resultImage, err = checkCache(&sett)
+	if context.OnlyCache {
+		resultImage, err = checkCache(&context)
 
 		if err != nil {
 			http.NotFound(rw, req)
@@ -479,7 +475,7 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 		}
 
 	} else {
-		resultImage = getOrCreateImage(sett)
+		resultImage = getOrCreateImage(&context)
 		contentLength := len(resultImage)
 
 		if contentLength == 0 {
@@ -497,8 +493,22 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 func init() {
 	log.SetOutput(os.Stdout)
 
+	flag.StringVar(&ListenAddr, "l", "127.0.0.1:8070", "Address to listen on")
+	flag.StringVar(&AllowedMedia, "m", "", "comma separated list of allowed media server hosts")
+	flag.StringVar(&AllowedSizes, "s", "", "comma separated list of allowed sizes")
+	flag.StringVar(&CacheDir, "c", "/tmp/imgwizard", "directory for cached files")
+	flag.StringVar(&S3BucketName, "s3-b", "", "AWS S3 cache bucket name")
+	flag.StringVar(&AzureContainerName, "az", "", "Microsoft Azure Storage container name")
+	flag.StringVar(&Default404, "thumb", "", "path to default image if original not found")
+	flag.StringVar(&DirsToSearch, "d", "", "comma separated list of directories to search requested file")
+	flag.StringVar(&Mark, "mark", "images", "Mark for nginx")
+	flag.StringVar(&NoCacheKey, "no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
+	flag.StringVar(&Nodes, "nodes", "", "Other imgwizard nodes to ask before process image")
+	flag.IntVar(&Quality, "q", 0, "image quality after resize")
+
 	if os.Getenv("DEBUG_ENABLED") != "" {
 		DEBUG = true
+		WARNING = true
 	}
 
 	if os.Getenv("WARNING_ENABLED") != "" {
@@ -521,7 +531,7 @@ func main() {
 	flag.Parse()
 	settings.loadSettings()
 
-	Cache, err = cache.NewCache(*S3BucketName, *AzureContainerName)
+	Cache, err = cache.NewCache(S3BucketName, AzureContainerName)
 
 	if err != nil {
 		warning("Could not create cache object, reason - %s", err)
@@ -531,8 +541,8 @@ func main() {
 	r := new(RegexpHandler)
 	r.HandleFunc(settings.UrlExp, fetchImage)
 
-	log.Printf("ImgWizard started on http://%s", settings.ListenAddr)
-	http.ListenAndServe(settings.ListenAddr, r)
+	log.Printf("ImgWizard started on http://%s", ListenAddr)
+	http.ListenAndServe(ListenAddr, r)
 }
 
 func debug(s string, args ...interface{}) {
