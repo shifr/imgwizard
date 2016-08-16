@@ -110,10 +110,18 @@ var (
 func (c *Context) makeCachePath() {
 	var subPath string
 	var cacheImageName string
+	var imageFormat string
 
 	pathParts := strings.Split(c.Path, "/")
 	lastIndex := len(pathParts) - 1
 	imageName := pathParts[lastIndex]
+	imageNameParts := strings.Split(imageName, ".")
+
+	if len(imageNameParts) > 1 {
+		lastNameIndex := len(imageNameParts) - 1
+		imageName = strings.Join(imageNameParts[:lastNameIndex], ".")
+		imageFormat = imageNameParts[lastNameIndex]
+	}
 
 	if c.Options.Webp {
 		cacheImageName = fmt.Sprintf(
@@ -121,6 +129,10 @@ func (c *Context) makeCachePath() {
 	} else {
 		cacheImageName = fmt.Sprintf(
 			"%s_%dx%d", imageName, c.Options.Width, c.Options.Height)
+	}
+
+	if imageFormat != "" {
+		cacheImageName = fmt.Sprintf("%s.%s", cacheImageName, imageFormat)
 	}
 
 	subPath = strings.Join(pathParts[:lastIndex], "/")
