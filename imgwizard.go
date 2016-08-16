@@ -48,7 +48,6 @@ type Context struct {
 	Height     int
 	Path       string
 	RequestURI string
-	Format     string
 	CachePath  string
 	Storage    string
 	Query      string
@@ -68,11 +67,12 @@ type Settings struct {
 }
 
 const (
-	VERSION           = 1.2
-	DEFAULT_POOL_SIZE = 100000
-	WEBP_HEADER       = "image/webp"
-	ONLY_CACHE_HEADER = "X-Cache-Only"
-	NO_CACHE_HEADER   = "X-No-Cache"
+	VERSION                  = 1.3
+	DEFAULT_POOL_SIZE        = 100000
+	WEBP_HEADER              = "image/webp"
+	ONLY_CACHE_HEADER        = "X-Cache-Only"
+	NO_CACHE_HEADER          = "X-No-Cache"
+	CACHE_DESTINATION_HEADER = "X-Cache-Destination"
 )
 
 var (
@@ -97,14 +97,13 @@ var (
 	Nodes              string
 	Quality            int
 
-	SupportedFormats = []string{"jpg", "jpeg", "png"}
-	AllowedFormats   = []string{"jpg", "jpeg", "png", "gif", "bmp", "svg"}
-	Crop             = map[string]vips.Gravity{
+	Crop = map[string]vips.Gravity{
 		"top":    vips.NORTH,
 		"right":  vips.EAST,
 		"bottom": vips.SOUTH,
 		"left":   vips.WEST,
 	}
+	ResizableImageTypes = []string{"image/jpeg", "image/png"}
 )
 
 // makeCachePath generates cache path for resized image
@@ -114,24 +113,17 @@ func (c *Context) makeCachePath() {
 
 	pathParts := strings.Split(c.Path, "/")
 	lastIndex := len(pathParts) - 1
-	imageData := strings.Split(pathParts[lastIndex], ".")
-	imageName, imageFormat := imageData[0], strings.ToLower(imageData[1])
-	c.Format = imageFormat
+	imageName := pathParts[lastIndex]
 
 	if c.Options.Webp {
 		cacheImageName = fmt.Sprintf(
-			"%s_%dx%d_webp_.%s", imageName, c.Options.Width, c.Options.Height, imageFormat)
+			"%s_%dx%d_webp", imageName, c.Options.Width, c.Options.Height)
 	} else {
 		cacheImageName = fmt.Sprintf(
-			"%s_%dx%d.%s", imageName, c.Options.Width, c.Options.Height, imageFormat)
+			"%s_%dx%d", imageName, c.Options.Width, c.Options.Height)
 	}
 
-	switch c.Storage {
-	case "loc":
-		subPath = strings.Join(pathParts[:lastIndex], "/")
-	case "rem":
-		subPath = strings.Join(pathParts[1:lastIndex], "/")
-	}
+	subPath = strings.Join(pathParts[:lastIndex], "/")
 
 	if S3BucketName != "" || AzureContainerName != "" {
 		c.CachePath, _ = url.QueryUnescape(fmt.Sprintf(
@@ -151,6 +143,7 @@ func (c *Context) Fill(req *http.Request) {
 	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
 	noCacheKey := req.Header.Get(NO_CACHE_HEADER)
 	onlyCacheHeader := req.Header.Get(ONLY_CACHE_HEADER)
+	cachePath := req.Header.Get(CACHE_DESTINATION_HEADER)
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 	c.Options = Options
@@ -178,6 +171,11 @@ func (c *Context) Fill(req *http.Request) {
 	c.Storage = params["storage"]
 	c.Path = params["path"]
 	c.Query = params["query"]
+
+	if cachePath != "" {
+		c.CachePath = cachePath
+		return
+	}
 
 	c.makeCachePath()
 }
@@ -227,12 +225,10 @@ func (s *Settings) loadSettings() {
 		medias = strings.Join(s.AllowedMedia, "|")
 	}
 
-	formats := strings.Join(AllowedFormats, "|")
-
 	template := fmt.Sprintf(
-		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>((%s)(.+).(?i)(%s)))",
-		Mark, sizes, medias, formats)
-
+		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>((%s)(.+)))",
+		Mark, sizes, medias)
+	debug("Template %s", template)
 	s.UrlExp, _ = regexp.Compile(template)
 }
 
@@ -411,19 +407,23 @@ func getOrCreateImage(ctx *Context) []byte {
 		}
 	}
 
-	debug("Check image format")
-	if !stringExists(ctx.Format, SupportedFormats) {
+	debug("Detecting image type...")
+	iType := http.DetectContentType(image)
+
+	if !stringExists(iType, ResizableImageTypes) {
+		warning("Wizard resize doesn't support image type, returning original image")
+		return image
+	}
+
+	debug("Processing image...")
+	buf, err := vips.Resize(image, ctx.Options)
+	if err != nil {
+		warning("Can't resize image, reason - %s", err)
+
 		err = Cache.Set(ctx.CachePath, image)
 		if err != nil {
 			warning("Can't set cache, reason - %s", err)
 		}
-		return image
-	}
-
-	debug("Processing image")
-	buf, err := vips.Resize(image, ctx.Options)
-	if err != nil {
-		warning("Can't resize image, reason - %s", err)
 		return image
 	}
 
