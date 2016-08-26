@@ -9,7 +9,10 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
 
 # What it can do? #
 
-  - Fetch image from local file system or remote media
+  - Fetch original image from:
+      - local file system
+      - remote media storage
+      - microsoft azure
   - Resize it
   - Crop it
   - Change quality 
@@ -25,7 +28,7 @@ http://{server}/{mark}/{storage}/{size}/{path_to_file}?{params}
 
   - <b>server</b> - imgwizard server addr
   - <b>mark</b> - mark for url (can be used for nginx proxying)
-  - <b>storage</b> - "loc" (local file system) or "rem" (remote media)
+  - <b>storage</b> - "loc" (local file system) or "rem" (remote media) or "az" (azure storage)
   - <b>size</b> - "320x240" or "320x" or "x240"
   - <b>path_to_file</b> - path to original file (without "http://")
   - <b>params</b> - query parameters
@@ -118,7 +121,7 @@ Then you should specify more ENV variables:
   - <b>AWS_ACCESS_KEY_ID</b>: your access key id
   - <b>AWS_SECRET_ACCESS_KEY</b>: your secret access key
 
-####Use Azure Storage for caching?####
+####Use Azure Storage for caching OR as storage for original image?####
 Then you should specify more ENV variables:
 
   - <b>AZURE_ACCOUNT_NAME</b>: your azure account name
