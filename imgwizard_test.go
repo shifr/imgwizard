@@ -17,7 +17,7 @@ func TestCachePath(t *testing.T) {
 			"media.somesite.ua/uploads/product_image/2015/02/242/c6cc5dd1-6f25-4642-734d-bbf5bef5dffa_8b91c9c17027e331f991ddc7ea3b2dd9_orig.jpg",
 			320,
 			240,
-			"/tmp/imgwizard/uploads/product_image/2015/02/242/c6cc5dd1-6f25-4642-734d-bbf5bef5dffa_8b91c9c17027e331f991ddc7ea3b2dd9_orig_320x240.jpg",
+			"/tmp/imgwizard/media.somesite.ua/uploads/product_image/2015/02/242/c6cc5dd1-6f25-4642-734d-bbf5bef5dffa_8b91c9c17027e331f991ddc7ea3b2dd9_orig_320x240.jpg",
 		},
 		{
 			"/your_cache_path",
@@ -25,7 +25,7 @@ func TestCachePath(t *testing.T) {
 			"media.somesite.ua/uploads/product_image/2015/02/242/c6cc5dd1-6f25-4642-734d-bbf5bef5dffa_8b91c9c17027e331f991ddc7ea3b2dd9_orig.jpg",
 			320,
 			240,
-			"/your_cache_path/uploads/product_image/2015/02/242/c6cc5dd1-6f25-4642-734d-bbf5bef5dffa_8b91c9c17027e331f991ddc7ea3b2dd9_orig_320x240.jpg",
+			"/your_cache_path/media.somesite.ua/uploads/product_image/2015/02/242/c6cc5dd1-6f25-4642-734d-bbf5bef5dffa_8b91c9c17027e331f991ddc7ea3b2dd9_orig_320x240.jpg",
 		},
 		{
 			"/tmp/imgwizard",
@@ -57,7 +57,7 @@ func TestCachePath(t *testing.T) {
 			"m/e/d/i/a_dir/image_orig.jpg",
 			0,
 			240,
-			"/tmp/imgwizard/e/d/i/a_dir/image_orig_0x240.jpg",
+			"/tmp/imgwizard/m/e/d/i/a_dir/image_orig_0x240.jpg",
 		},
 		{
 			"/tmp/imgwizard",

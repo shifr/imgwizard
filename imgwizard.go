@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/storage"
 	"github.com/shifr/imgwizard/cache"
 	"github.com/shifr/vips"
 )
@@ -42,16 +43,18 @@ func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type Context struct {
-	NoCache    bool
-	OnlyCache  bool
-	Width      int
-	Height     int
-	Path       string
-	RequestURI string
-	Format     string
-	CachePath  string
-	Storage    string
-	Query      string
+	NoCache        bool
+	OnlyCache      bool
+	Width          int
+	Height         int
+	AzureContainer string
+	Path           string
+	RequestURI     string
+	CachePath      string
+	Storage        string
+	SubPath        string
+	OrigImage      string
+	Query          string
 
 	Options vips.Options
 }
@@ -68,22 +71,26 @@ type Settings struct {
 }
 
 const (
-	VERSION           = 1.2
-	DEFAULT_POOL_SIZE = 100000
-	WEBP_HEADER       = "image/webp"
-	ONLY_CACHE_HEADER = "X-Cache-Only"
-	NO_CACHE_HEADER   = "X-No-Cache"
+	VERSION                  = 1.3
+	DEFAULT_POOL_SIZE        = 100000
+	WEBP_HEADER              = "image/webp"
+	ONLY_CACHE_HEADER        = "X-Cache-Only"
+	NO_CACHE_HEADER          = "X-No-Cache"
+	CACHE_DESTINATION_HEADER = "X-Cache-Destination"
 )
 
 var (
 	DEBUG           = false
 	WARNING         = false
+	isAzure         = false
 	DEFAULT_QUALITY = 80
 
 	settings           Settings
 	Cache              *cache.Cache
 	Options            vips.Options
+	AzureClient        storage.BlobStorageClient
 	ChanPool           chan int
+	Version            bool
 	ListenAddr         string
 	AllowedMedia       string
 	AllowedSizes       string
@@ -97,40 +104,59 @@ var (
 	Nodes              string
 	Quality            int
 
-	SupportedFormats = []string{"jpg", "jpeg", "png"}
-	AllowedFormats   = []string{"jpg", "jpeg", "png", "gif", "bmp", "svg"}
-	Crop             = map[string]vips.Gravity{
+	Crop = map[string]vips.Gravity{
 		"top":    vips.NORTH,
 		"right":  vips.EAST,
 		"bottom": vips.SOUTH,
 		"left":   vips.WEST,
 	}
+	ResizableImageTypes = []string{"image/jpeg", "image/png"}
 )
 
 // makeCachePath generates cache path for resized image
 func (c *Context) makeCachePath() {
-	var subPath string
 	var cacheImageName string
+	var imageFormat string
+	var subPath string
 
 	pathParts := strings.Split(c.Path, "/")
 	lastIndex := len(pathParts) - 1
-	imageData := strings.Split(pathParts[lastIndex], ".")
-	imageName, imageFormat := imageData[0], strings.ToLower(imageData[1])
-	c.Format = imageFormat
+	imageName := pathParts[lastIndex]
+	imageNameParts := strings.Split(imageName, ".")
+
+	if len(imageNameParts) > 1 {
+		lastNameIndex := len(imageNameParts) - 1
+		imageName = strings.Join(imageNameParts[:lastNameIndex], ".")
+		imageFormat = imageNameParts[lastNameIndex]
+	}
 
 	if c.Options.Webp {
 		cacheImageName = fmt.Sprintf(
-			"%s_%dx%d_webp_.%s", imageName, c.Options.Width, c.Options.Height, imageFormat)
+			"%s_%dx%d_webp", imageName, c.Options.Width, c.Options.Height)
 	} else {
 		cacheImageName = fmt.Sprintf(
-			"%s_%dx%d.%s", imageName, c.Options.Width, c.Options.Height, imageFormat)
+			"%s_%dx%d", imageName, c.Options.Width, c.Options.Height)
 	}
 
+	if imageFormat != "" {
+		cacheImageName = fmt.Sprintf("%s.%s", cacheImageName, imageFormat)
+	}
+
+	subPath = strings.Join(pathParts[:lastIndex], "/")
 	switch c.Storage {
 	case "loc":
-		subPath = strings.Join(pathParts[:lastIndex], "/")
-	case "rem":
+		c.OrigImage, _ = url.QueryUnescape(c.Path)
+	case "az":
+		c.AzureContainer = pathParts[0]
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
+		c.OrigImage, _ = url.QueryUnescape(fmt.Sprintf(
+			"%s/%s", subPath, pathParts[lastIndex]))
+	case "rem":
+		c.OrigImage = fmt.Sprintf("%s://%s", settings.Scheme, c.Path)
+	}
+
+	if c.CachePath != "" {
+		return
 	}
 
 	if S3BucketName != "" || AzureContainerName != "" {
@@ -151,6 +177,7 @@ func (c *Context) Fill(req *http.Request) {
 	acceptedTypes := strings.Split(req.Header.Get("Accept"), ",")
 	noCacheKey := req.Header.Get(NO_CACHE_HEADER)
 	onlyCacheHeader := req.Header.Get(ONLY_CACHE_HEADER)
+	cachePath := req.Header.Get(CACHE_DESTINATION_HEADER)
 	params := parseVars(req)
 	sizes := strings.Split(params["size"], "x")
 	c.Options = Options
@@ -178,6 +205,8 @@ func (c *Context) Fill(req *http.Request) {
 	c.Storage = params["storage"]
 	c.Path = params["path"]
 	c.Query = params["query"]
+
+	c.CachePath = cachePath
 
 	c.makeCachePath()
 }
@@ -227,12 +256,10 @@ func (s *Settings) loadSettings() {
 		medias = strings.Join(s.AllowedMedia, "|")
 	}
 
-	formats := strings.Join(AllowedFormats, "|")
-
 	template := fmt.Sprintf(
-		"/(?P<mark>%s)/(?P<storage>loc|rem)/(?P<size>%s)/(?P<path>((%s)(.+).(?i)(%s)))",
-		Mark, sizes, medias, formats)
-
+		"/(?P<mark>%s)/(?P<storage>loc|rem|az)/(?P<size>%s)/(?P<path>((%s)(.+)))",
+		Mark, sizes, medias)
+	debug("Template %s", template)
 	s.UrlExp, _ = regexp.Compile(template)
 }
 
@@ -241,11 +268,10 @@ func fileExists(ctx *Context) (string, error) {
 	var err error
 
 	debug("Trying to find local image")
-	ctx.Path, _ = url.QueryUnescape(ctx.Path)
 
 	if len(settings.Directories) > 0 {
 		for _, dir := range settings.Directories {
-			filePath = path.Join("/", dir, ctx.Path)
+			filePath = path.Join("/", dir, ctx.OrigImage)
 			if _, err = os.Stat(filePath); err == nil {
 				return filePath, nil
 			}
@@ -253,7 +279,7 @@ func fileExists(ctx *Context) (string, error) {
 		return "", err
 	}
 
-	filePath = path.Join("/", ctx.Path)
+	filePath = path.Join("/", ctx.OrigImage)
 
 	if _, err = os.Stat(filePath); os.IsNotExist(err) {
 		return "", err
@@ -297,16 +323,17 @@ func getLocalImage(ctx *Context, def bool) ([]byte, error) {
 }
 
 // getRemoteImage fetches original image by http url
-func getRemoteImage(ctx *Context, url string, isNode bool) ([]byte, error) {
+func getRemoteImage(ctx *Context, isNode bool) ([]byte, error) {
 	var image []byte
 	var client = &http.Client{}
 
-	debug("Trying to fetch remote image: %s", url)
+	debug("Trying to fetch remote image: %s", ctx.OrigImage)
 
-	req, _ := http.NewRequest("GET", url, nil)
+	req, _ := http.NewRequest("GET", ctx.OrigImage, nil)
 
 	if isNode {
 		req.Header.Set(ONLY_CACHE_HEADER, "true")
+		req.Header.Set(CACHE_DESTINATION_HEADER, ctx.CachePath)
 
 		if ctx.Options.Webp {
 			req.Header.Set("Accept", WEBP_HEADER)
@@ -327,6 +354,23 @@ func getRemoteImage(ctx *Context, url string, isNode bool) ([]byte, error) {
 	image, err = ioutil.ReadAll(resp.Body)
 
 	return image, nil
+}
+
+// getAzureImage fetches original image AzureStorage
+func getAzureImage(ctx *Context) ([]byte, error) {
+	var image []byte
+	var err error
+
+	debug("Trying to fetch azure image: '%s'", ctx.OrigImage)
+	rc, err := AzureClient.GetBlob(ctx.AzureContainer, ctx.OrigImage)
+	if err != nil {
+		return image, err
+	}
+	defer rc.Close()
+
+	image, err = ioutil.ReadAll(rc)
+
+	return image, err
 }
 
 func checkCache(ctx *Context) ([]byte, error) {
@@ -353,10 +397,11 @@ func checkCache(ctx *Context) ([]byte, error) {
 func checkNodes(ctx *Context) ([]byte, error) {
 	var image []byte
 	var err error
+	context := *ctx
 
 	for _, node := range settings.Nodes {
-		reqUrl := fmt.Sprintf("%s://%s%s", settings.Scheme, node, ctx.RequestURI)
-		if image, err = getRemoteImage(ctx, reqUrl, true); err == nil {
+		context.OrigImage = fmt.Sprintf("%s://%s%s", settings.Scheme, node, context.RequestURI)
+		if image, err = getRemoteImage(&context, true); err == nil {
 			debug("Found at node: %s", node)
 			return image, nil
 		}
@@ -382,7 +427,7 @@ func getOrCreateImage(ctx *Context) []byte {
 	case "loc":
 		image, err = getLocalImage(ctx, false)
 		if err != nil {
-			warning("Can't get orig local file - %s, reason - %s", ctx.Path, err)
+			warning("Can't get orig local file - %s, reason - %s", ctx.OrigImage, err)
 			if Default404 != "" {
 				image, err = getLocalImage(ctx, true)
 
@@ -395,10 +440,28 @@ func getOrCreateImage(ctx *Context) []byte {
 		}
 
 	case "rem":
-		imgUrl := fmt.Sprintf("%s://%s", settings.Scheme, ctx.Path)
-		image, err = getRemoteImage(ctx, imgUrl, false)
+		image, err = getRemoteImage(ctx, false)
 		if err != nil {
-			warning("Can't get orig remote file - %s, reason - %s", ctx.Path, err)
+			warning("Can't get orig remote file, reason - %s", err)
+			if Default404 != "" {
+				image, err = getLocalImage(ctx, true)
+
+				if err != nil {
+					warning("Default 404 image was set but not found", Default404)
+					return image
+				}
+			}
+			return image
+		}
+
+	case "az":
+		if !isAzure {
+			return image
+		}
+
+		image, err = getAzureImage(ctx)
+		if err != nil {
+			warning("Can't get orig Azure file - %s, reason - %s", ctx.OrigImage, err)
 			if Default404 != "" {
 				image, err = getLocalImage(ctx, true)
 
@@ -411,19 +474,23 @@ func getOrCreateImage(ctx *Context) []byte {
 		}
 	}
 
-	debug("Check image format")
-	if !stringExists(ctx.Format, SupportedFormats) {
+	debug("Detecting image type...")
+	iType := http.DetectContentType(image)
+
+	if !stringExists(iType, ResizableImageTypes) {
+		warning("Wizard resize doesn't support image type, returning original image")
+		return image
+	}
+
+	debug("Processing image...")
+	buf, err := vips.Resize(image, ctx.Options)
+	if err != nil {
+		warning("Can't resize image, reason - %s", err)
+
 		err = Cache.Set(ctx.CachePath, image)
 		if err != nil {
 			warning("Can't set cache, reason - %s", err)
 		}
-		return image
-	}
-
-	debug("Processing image")
-	buf, err := vips.Resize(image, ctx.Options)
-	if err != nil {
-		warning("Can't resize image, reason - %s", err)
 		return image
 	}
 
@@ -493,6 +560,7 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 func init() {
 	log.SetOutput(os.Stdout)
 
+	flag.BoolVar(&Version, "v", false, "Check imgwizard version")
 	flag.StringVar(&ListenAddr, "l", "127.0.0.1:8070", "Address to listen on")
 	flag.StringVar(&AllowedMedia, "m", "", "comma separated list of allowed media server hosts")
 	flag.StringVar(&AllowedSizes, "s", "", "comma separated list of allowed sizes")
@@ -515,13 +583,18 @@ func init() {
 		WARNING = true
 	}
 
-	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
-	if err != nil {
-		debug("Making channel with default size")
-		ChanPool = make(chan int, DEFAULT_POOL_SIZE)
-	} else {
-		debug("Making channel, size %d", pool_size)
-		ChanPool = make(chan int, pool_size)
+	azAccountName := os.Getenv("AZURE_ACCOUNT_NAME")
+	azAccountKey := os.Getenv("AZURE_ACCOUNT_KEY")
+
+	if azAccountName != "" && azAccountKey != "" {
+		azureBasicCli, err := storage.NewBasicClient(azAccountName, azAccountKey)
+		if err != nil {
+			warning("Could not create AzureClient, reason - %s", err)
+			os.Exit(0)
+		}
+
+		AzureClient = azureBasicCli.GetBlobService()
+		isAzure = true
 	}
 }
 
@@ -529,6 +602,21 @@ func main() {
 	var err error
 
 	flag.Parse()
+
+	if Version {
+		log.Println("Version:", VERSION)
+		return
+	}
+
+	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
+	if err != nil {
+		debug("Making channel with default size")
+		ChanPool = make(chan int, DEFAULT_POOL_SIZE)
+	} else {
+		debug("Making channe, size %d", pool_size)
+		ChanPool = make(chan int, pool_size)
+	}
+
 	settings.loadSettings()
 
 	Cache, err = cache.NewCache(S3BucketName, AzureContainerName)
