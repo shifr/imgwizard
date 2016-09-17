@@ -46,10 +46,6 @@ func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-type OriginClient interface {
-	GetImage()
-}
-
 type Context struct {
 	NoCache         bool
 	OnlyCache       bool
