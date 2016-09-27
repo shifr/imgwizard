@@ -236,7 +236,7 @@ func (s *Settings) loadSettings() {
 
 	//defaults for vips
 	Options.Crop = true
-	Options.Enlarge = true
+	Options.Enlarge = false
 	Options.Extend = vips.EXTEND_WHITE
 	Options.Interpolator = vips.BILINEAR
 
