@@ -13,6 +13,7 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
       - local file system
       - remote media storage
       - microsoft azure
+      - amazon s3
   - Resize it
   - Crop it
   - Change quality 
@@ -114,14 +115,14 @@ Try to add PKG_CONFIG_PATH into environment:
   - <b>-nodes</b>: comma separated list of other imgwizard nodes for cache check (see [nodes])
   - <b> -no-cache-key</b>: secret key that must be equal X-No-Cache value from request header to prevent reading from cache
 
-####Use Amazon S3 for caching?####
+####Use Amazon S3 for caching OR as a storage for original image?####
 Then you should specify more ENV variables:
 
   - <b>AWS_REGION</b>: where to send requests. (Example: "us-west-2") //Required
   - <b>AWS_ACCESS_KEY_ID</b>: your access key id
   - <b>AWS_SECRET_ACCESS_KEY</b>: your secret access key
 
-####Use Azure Storage for caching OR as storage for original image?####
+####Use Azure Storage for caching OR as a storage for original image?####
 Then you should specify more ENV variables:
 
   - <b>AZURE_ACCOUNT_NAME</b>: your azure account name
