@@ -15,6 +15,10 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/storage"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/shifr/imgwizard/cache"
 	"github.com/shifr/vips"
 )
@@ -48,6 +52,7 @@ type Context struct {
 	Width          int
 	Height         int
 	AzureContainer string
+	S3Bucket       string
 	Path           string
 	RequestURI     string
 	CachePath      string
@@ -74,6 +79,11 @@ const (
 	VERSION                  = 1.3
 	DEFAULT_POOL_SIZE        = 100000
 	WEBP_HEADER              = "image/webp"
+	AZURE_ACCOUNT_NAME       = "AZURE_ACCOUNT_NAME"
+	AZURE_ACCOUNT_KEY        = "AZURE_ACCOUNT_KEY"
+	AWS_REGION               = "AWS_REGION"
+	AWS_ACCESS_KEY_ID        = "AWS_ACCESS_KEY_ID"
+	AWS_SECRET_ACCESS_KEY    = "AWS_SECRET_ACCESS_KEY"
 	ONLY_CACHE_HEADER        = "X-Cache-Only"
 	NO_CACHE_HEADER          = "X-No-Cache"
 	CACHE_DESTINATION_HEADER = "X-Cache-Destination"
@@ -82,13 +92,14 @@ const (
 var (
 	DEBUG           = false
 	WARNING         = false
-	isAzure         = false
+	ClientConfirmed = false
 	DEFAULT_QUALITY = 80
 
 	settings           Settings
 	Cache              *cache.Cache
 	Options            vips.Options
 	AzureClient        storage.BlobStorageClient
+	S3Client           *s3.S3
 	ChanPool           chan int
 	Version            bool
 	ListenAddr         string
@@ -148,6 +159,11 @@ func (c *Context) makeCachePath() {
 		c.OrigImage, _ = url.QueryUnescape(c.Path)
 	case "az":
 		c.AzureContainer = pathParts[0]
+		subPath = strings.Join(pathParts[1:lastIndex], "/")
+		c.OrigImage, _ = url.QueryUnescape(fmt.Sprintf(
+			"%s/%s", subPath, pathParts[lastIndex]))
+	case "s3":
+		c.S3Bucket = pathParts[0]
 		subPath = strings.Join(pathParts[1:lastIndex], "/")
 		c.OrigImage, _ = url.QueryUnescape(fmt.Sprintf(
 			"%s/%s", subPath, pathParts[lastIndex]))
@@ -257,7 +273,7 @@ func (s *Settings) loadSettings() {
 	}
 
 	template := fmt.Sprintf(
-		"/(?P<mark>%s)/(?P<storage>loc|rem|az)/(?P<size>%s)/(?P<path>((%s)(.+)))",
+		"/(?P<mark>%s)/(?P<storage>loc|rem|az|s3)/(?P<size>%s)/(?P<path>((%s)(.+)))",
 		Mark, sizes, medias)
 	debug("Template %s", template)
 	s.UrlExp, _ = regexp.Compile(template)
@@ -373,6 +389,30 @@ func getAzureImage(ctx *Context) ([]byte, error) {
 	return image, err
 }
 
+// getS3Image fetches original image from AWS S3 storage
+func getS3Image(ctx *Context) ([]byte, error) {
+	var image []byte
+	var err error
+
+	debug("Trying to fetch S3 image: '%s'", ctx.OrigImage)
+
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(ctx.S3Bucket),
+		Key:    aws.String(ctx.OrigImage),
+	}
+
+	resp, err := S3Client.GetObject(params)
+
+	if err != nil {
+		return image, err
+	}
+	defer resp.Body.Close()
+
+	image, err = ioutil.ReadAll(resp.Body)
+
+	return image, err
+}
+
 func checkCache(ctx *Context) ([]byte, error) {
 
 	var image []byte
@@ -455,13 +495,32 @@ func getOrCreateImage(ctx *Context) []byte {
 		}
 
 	case "az":
-		if !isAzure {
+		if !ClientConfirmed {
 			return image
 		}
 
 		image, err = getAzureImage(ctx)
 		if err != nil {
 			warning("Can't get orig Azure file - %s, reason - %s", ctx.OrigImage, err)
+			if Default404 != "" {
+				image, err = getLocalImage(ctx, true)
+
+				if err != nil {
+					warning("Default 404 image was set but not found", Default404)
+					return image
+				}
+			}
+			return image
+		}
+
+	case "s3":
+		if !ClientConfirmed {
+			return image
+		}
+
+		image, err = getS3Image(ctx)
+		if err != nil {
+			warning("Can't get orig AWS S3 file - %s, reason - %s", ctx.OrigImage, err)
 			if Default404 != "" {
 				image, err = getLocalImage(ctx, true)
 
@@ -583,8 +642,11 @@ func init() {
 		WARNING = true
 	}
 
-	azAccountName := os.Getenv("AZURE_ACCOUNT_NAME")
-	azAccountKey := os.Getenv("AZURE_ACCOUNT_KEY")
+	azAccountName := os.Getenv(AZURE_ACCOUNT_NAME)
+	azAccountKey := os.Getenv(AZURE_ACCOUNT_KEY)
+	s3Region := os.Getenv(AWS_REGION)
+	s3AccessKey := os.Getenv(AWS_ACCESS_KEY_ID)
+	s3SecretKey := os.Getenv(AWS_SECRET_ACCESS_KEY)
 
 	if azAccountName != "" && azAccountKey != "" {
 		azureBasicCli, err := storage.NewBasicClient(azAccountName, azAccountKey)
@@ -594,7 +656,21 @@ func init() {
 		}
 
 		AzureClient = azureBasicCli.GetBlobService()
-		isAzure = true
+
+		log.Println("AzureClient created and confirmed")
+		ClientConfirmed = true
+	}
+
+	if s3Region != "" && s3AccessKey != "" && s3SecretKey != "" {
+		creds := credentials.NewStaticCredentials(s3AccessKey, s3SecretKey, "")
+		S3Client = s3.New(
+			session.New(&aws.Config{
+				Region:      aws.String(s3Region),
+				Credentials: creds,
+			}))
+
+		log.Println("AWS S3 client created and confirmed")
+		ClientConfirmed = true
 	}
 }
 
