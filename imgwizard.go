@@ -76,7 +76,7 @@ type Settings struct {
 }
 
 const (
-	VERSION                  = 1.4
+	VERSION                  = 1.5
 	DEFAULT_POOL_SIZE        = 100000
 	WEBP_HEADER              = "image/webp"
 	AZURE_ACCOUNT_NAME       = "AZURE_ACCOUNT_NAME"
