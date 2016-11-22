@@ -37,6 +37,7 @@ http://{server}/{mark}/{storage}/{size}/{path_to_file}?{params}
 #####Params:#####
   - <b>crop</b> - sides fixed when cropping (top, right, bottom, left)
   - <b>q</b> - result image quality (default set from command line "-q")
+  - <b>original</b> ("true" or "false", default - "false") - return original image without processing and saving to cache
 
 ##### Example: #####
 

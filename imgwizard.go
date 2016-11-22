@@ -49,6 +49,7 @@ func (h *RegexpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type Context struct {
 	NoCache        bool
 	OnlyCache      bool
+	IsOriginal     bool
 	Width          int
 	Height         int
 	AzureContainer string
@@ -209,6 +210,10 @@ func (c *Context) Fill(req *http.Request) {
 
 	if q := req.FormValue("q"); q != "" {
 		c.Options.Quality, _ = strconv.Atoi(q)
+	}
+
+	if o := req.FormValue("original"); o != "" {
+		c.IsOriginal = true
 	}
 
 	c.Options.Webp = stringExists(WEBP_HEADER, acceptedTypes)
@@ -538,6 +543,11 @@ func getOrCreateImage(ctx *Context) []byte {
 
 	if !stringExists(iType, ResizableImageTypes) {
 		warning("Wizard resize doesn't support image type, returning original image")
+		return image
+	}
+
+	if ctx.IsOriginal {
+		debug("Returning original image as requested...")
 		return image
 	}
 
