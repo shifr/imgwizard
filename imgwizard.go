@@ -1,8 +1,7 @@
-package main
+package imgwizard
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -72,8 +71,6 @@ type Settings struct {
 	Directories  []string
 	Nodes        []string
 	UrlExp       *regexp.Regexp
-
-	Context Context
 }
 
 const (
@@ -96,12 +93,14 @@ var (
 	ClientConfirmed = false
 	DEFAULT_QUALITY = 80
 
-	settings           Settings
-	Cache              *cache.Cache
-	Options            vips.Options
-	AzureClient        storage.BlobStorageClient
-	S3Client           *s3.S3
-	ChanPool           chan int
+	Crop = map[string]vips.Gravity{
+		"top":    vips.NORTH,
+		"right":  vips.EAST,
+		"bottom": vips.SOUTH,
+		"left":   vips.WEST,
+	}
+	ResizableImageTypes = []string{"image/jpeg", "image/png"}
+
 	Version            bool
 	ListenAddr         string
 	AllowedMedia       string
@@ -116,14 +115,77 @@ var (
 	Nodes              string
 	Quality            int
 
-	Crop = map[string]vips.Gravity{
-		"top":    vips.NORTH,
-		"right":  vips.EAST,
-		"bottom": vips.SOUTH,
-		"left":   vips.WEST,
-	}
-	ResizableImageTypes = []string{"image/jpeg", "image/png"}
+	ChanPool       chan int
+	Cache          *cache.Cache
+	Options        vips.Options
+	GlobalSettings Settings
+	AzureClient    storage.BlobStorageClient
+	S3Client       *s3.S3
 )
+
+func loadDefaults() {
+	if os.Getenv("DEBUG_ENABLED") != "" {
+		DEBUG = true
+		WARNING = true
+	}
+
+	if os.Getenv("WARNING_ENABLED") != "" {
+		WARNING = true
+	}
+
+	//defaults for vips
+	Options.Crop = true
+	Options.Enlarge = false
+	Options.Extend = vips.EXTEND_WHITE
+	Options.Interpolator = vips.BILINEAR
+
+	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
+	if err != nil {
+		debug("Making channel with default size")
+		ChanPool = make(chan int, DEFAULT_POOL_SIZE)
+	} else {
+		debug("Making channe, size %d", pool_size)
+		ChanPool = make(chan int, pool_size)
+	}
+
+	Cache, err = cache.NewCache(S3BucketName, AzureContainerName)
+
+	if err != nil {
+		warning("Could not create cache object, reason - %s", err)
+		os.Exit(1)
+	}
+
+	azAccountName := os.Getenv(AZURE_ACCOUNT_NAME)
+	azAccountKey := os.Getenv(AZURE_ACCOUNT_KEY)
+	s3Region := os.Getenv(AWS_REGION)
+	s3AccessKey := os.Getenv(AWS_ACCESS_KEY_ID)
+	s3SecretKey := os.Getenv(AWS_SECRET_ACCESS_KEY)
+
+	if azAccountName != "" && azAccountKey != "" {
+		azureBasicCli, err := storage.NewBasicClient(azAccountName, azAccountKey)
+		if err != nil {
+			warning("Could not create AzureClient, reason - %s", err)
+			os.Exit(1)
+		}
+
+		AzureClient = azureBasicCli.GetBlobService()
+
+		log.Println("AzureClient created and confirmed")
+		ClientConfirmed = true
+	}
+
+	if s3Region != "" && s3AccessKey != "" && s3SecretKey != "" {
+		creds := credentials.NewStaticCredentials(s3AccessKey, s3SecretKey, "")
+		S3Client = s3.New(
+			session.New(&aws.Config{
+				Region:      aws.String(s3Region),
+				Credentials: creds,
+			}))
+
+		log.Println("AWS S3 client created and confirmed")
+		ClientConfirmed = true
+	}
+}
 
 // makeCachePath generates cache path for resized image
 func (c *Context) makeCachePath() {
@@ -169,7 +231,7 @@ func (c *Context) makeCachePath() {
 		c.OrigImage, _ = url.QueryUnescape(fmt.Sprintf(
 			"%s/%s", subPath, pathParts[lastIndex]))
 	case "rem":
-		c.OrigImage = fmt.Sprintf("%s://%s", settings.Scheme, c.Path)
+		c.OrigImage = fmt.Sprintf("%s://%s", GlobalSettings.Scheme, c.Path)
 	}
 
 	if c.CachePath != "" {
@@ -233,17 +295,12 @@ func (c *Context) Fill(req *http.Request) {
 }
 
 // loadSettings loads settings from command-line
-func (s *Settings) loadSettings() {
+func (s *Settings) Load() {
+	loadDefaults()
 
 	s.Scheme = "http"
 	s.AllowedSizes = nil
 	s.AllowedMedia = nil
-
-	//defaults for vips
-	Options.Crop = true
-	Options.Enlarge = false
-	Options.Extend = vips.EXTEND_WHITE
-	Options.Interpolator = vips.BILINEAR
 
 	var sizes = "[0-9]*x[0-9]*"
 	var medias = ""
@@ -290,8 +347,8 @@ func fileExists(ctx *Context) (string, error) {
 
 	debug("Trying to find local image")
 
-	if len(settings.Directories) > 0 {
-		for _, dir := range settings.Directories {
+	if len(GlobalSettings.Directories) > 0 {
+		for _, dir := range GlobalSettings.Directories {
 			filePath = path.Join("/", dir, ctx.OrigImage)
 			if _, err = os.Stat(filePath); err == nil {
 				return filePath, nil
@@ -428,7 +485,7 @@ func checkCache(ctx *Context) ([]byte, error) {
 		return image, nil
 	}
 
-	if len(settings.Nodes) > 0 && !ctx.OnlyCache {
+	if len(GlobalSettings.Nodes) > 0 && !ctx.OnlyCache {
 		debug("Checking other nodes")
 		if image, err = checkNodes(ctx); err == nil {
 			return image, nil
@@ -444,8 +501,8 @@ func checkNodes(ctx *Context) ([]byte, error) {
 	var err error
 	context := *ctx
 
-	for _, node := range settings.Nodes {
-		context.OrigImage = fmt.Sprintf("%s://%s%s", settings.Scheme, node, context.RequestURI)
+	for _, node := range GlobalSettings.Nodes {
+		context.OrigImage = fmt.Sprintf("%s://%s%s", GlobalSettings.Scheme, node, context.RequestURI)
 		if image, err = getRemoteImage(&context, true); err == nil {
 			debug("Found at node: %s", node)
 			return image, nil
@@ -583,16 +640,16 @@ func stringExists(str string, list []string) bool {
 
 func parseVars(req *http.Request) map[string]string {
 	params := map[string]string{"query": req.URL.RawQuery}
-	match := settings.UrlExp.FindStringSubmatch(req.URL.Path)
+	match := GlobalSettings.UrlExp.FindStringSubmatch(req.URL.Path)
 
-	for i, name := range settings.UrlExp.SubexpNames() {
+	for i, name := range GlobalSettings.UrlExp.SubexpNames() {
 		params[name] = match[i]
 	}
 
 	return params
 }
 
-func fetchImage(rw http.ResponseWriter, req *http.Request) {
+func FetchImage(rw http.ResponseWriter, req *http.Request) {
 	ChanPool <- 1
 
 	var resultImage []byte
@@ -624,99 +681,6 @@ func fetchImage(rw http.ResponseWriter, req *http.Request) {
 	}
 
 	<-ChanPool
-}
-
-func init() {
-	log.SetOutput(os.Stdout)
-
-	flag.BoolVar(&Version, "v", false, "Check imgwizard version")
-	flag.StringVar(&ListenAddr, "l", "127.0.0.1:8070", "Address to listen on")
-	flag.StringVar(&AllowedMedia, "m", "", "comma separated list of allowed media server hosts")
-	flag.StringVar(&AllowedSizes, "s", "", "comma separated list of allowed sizes")
-	flag.StringVar(&CacheDir, "c", "/tmp/imgwizard", "directory for cached files")
-	flag.StringVar(&S3BucketName, "s3-b", "", "AWS S3 cache bucket name")
-	flag.StringVar(&AzureContainerName, "az", "", "Microsoft Azure Storage container name")
-	flag.StringVar(&Default404, "thumb", "", "path to default image if original not found")
-	flag.StringVar(&DirsToSearch, "d", "", "comma separated list of directories to search requested file")
-	flag.StringVar(&Mark, "mark", "images", "Mark for nginx")
-	flag.StringVar(&NoCacheKey, "no-cache-key", "", "Secret key that must be equal X-No-Cache value from request header")
-	flag.StringVar(&Nodes, "nodes", "", "Other imgwizard nodes to ask before process image")
-	flag.IntVar(&Quality, "q", 0, "image quality after resize")
-
-	if os.Getenv("DEBUG_ENABLED") != "" {
-		DEBUG = true
-		WARNING = true
-	}
-
-	if os.Getenv("WARNING_ENABLED") != "" {
-		WARNING = true
-	}
-
-	azAccountName := os.Getenv(AZURE_ACCOUNT_NAME)
-	azAccountKey := os.Getenv(AZURE_ACCOUNT_KEY)
-	s3Region := os.Getenv(AWS_REGION)
-	s3AccessKey := os.Getenv(AWS_ACCESS_KEY_ID)
-	s3SecretKey := os.Getenv(AWS_SECRET_ACCESS_KEY)
-
-	if azAccountName != "" && azAccountKey != "" {
-		azureBasicCli, err := storage.NewBasicClient(azAccountName, azAccountKey)
-		if err != nil {
-			warning("Could not create AzureClient, reason - %s", err)
-			os.Exit(0)
-		}
-
-		AzureClient = azureBasicCli.GetBlobService()
-
-		log.Println("AzureClient created and confirmed")
-		ClientConfirmed = true
-	}
-
-	if s3Region != "" && s3AccessKey != "" && s3SecretKey != "" {
-		creds := credentials.NewStaticCredentials(s3AccessKey, s3SecretKey, "")
-		S3Client = s3.New(
-			session.New(&aws.Config{
-				Region:      aws.String(s3Region),
-				Credentials: creds,
-			}))
-
-		log.Println("AWS S3 client created and confirmed")
-		ClientConfirmed = true
-	}
-}
-
-func main() {
-	var err error
-
-	flag.Parse()
-
-	if Version {
-		log.Println("Version:", VERSION)
-		return
-	}
-
-	pool_size, err := strconv.Atoi(os.Getenv("IMGW_POOL_SIZE"))
-	if err != nil {
-		debug("Making channel with default size")
-		ChanPool = make(chan int, DEFAULT_POOL_SIZE)
-	} else {
-		debug("Making channe, size %d", pool_size)
-		ChanPool = make(chan int, pool_size)
-	}
-
-	settings.loadSettings()
-
-	Cache, err = cache.NewCache(S3BucketName, AzureContainerName)
-
-	if err != nil {
-		warning("Could not create cache object, reason - %s", err)
-		return
-	}
-
-	r := new(RegexpHandler)
-	r.HandleFunc(settings.UrlExp, fetchImage)
-
-	log.Printf("ImgWizard started on http://%s", ListenAddr)
-	http.ListenAndServe(ListenAddr, r)
 }
 
 func debug(s string, args ...interface{}) {
