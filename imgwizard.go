@@ -609,24 +609,15 @@ func getOrCreateImage(ctx *Context) []byte {
 	}
 
 	debug("Processing image...")
-	buf, err := vips.Resize(image, ctx.Options)
-	if err != nil {
-		warning("Can't resize image, reason - %s", err)
-
-		err = Cache.Set(ctx.CachePath, image)
-		if err != nil {
-			warning("Can't set cache, reason - %s", err)
-		}
-		return image
-	}
+	image = image.Transform(image, ctx, iType)
 
 	debug("Set to cache, key: %s", ctx.CachePath)
-	err = Cache.Set(ctx.CachePath, buf)
+	err = Cache.Set(ctx.CachePath, image)
 	if err != nil {
 		warning("Can't set cache, reason - %s", err)
 	}
 
-	return buf
+	return image
 }
 
 func stringExists(str string, list []string) bool {
