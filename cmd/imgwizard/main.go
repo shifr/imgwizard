@@ -9,7 +9,7 @@ import (
 	"github.com/shifr/imgwizard"
 )
 
-const VERSION = 1.5
+const VERSION = 1.6
 
 func init() {
 	log.SetOutput(os.Stdout)
