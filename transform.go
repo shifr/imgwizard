@@ -28,7 +28,7 @@ func Transform(img_buff *[]byte, ctx *Context) {
 		return
 	}
 
-	if iType == PNG {
+	if iType == PNG && !ctx.Options.Webp {
 		decoded, _, err := image.Decode(bytes.NewReader(*img_buff))
 		if err != nil {
 			warning("Can't decode PNG image, reason - %s", err)
