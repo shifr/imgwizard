@@ -77,6 +77,8 @@ const (
 	VERSION                  = 1.5
 	DEFAULT_POOL_SIZE        = 100000
 	WEBP_HEADER              = "image/webp"
+	JPEG                     = "image/jpeg"
+	PNG                      = "image/png"
 	AZURE_ACCOUNT_NAME       = "AZURE_ACCOUNT_NAME"
 	AZURE_ACCOUNT_KEY        = "AZURE_ACCOUNT_KEY"
 	AWS_REGION               = "AWS_REGION"
@@ -595,8 +597,13 @@ func getOrCreateImage(ctx *Context) []byte {
 		}
 	}
 
+	if ctx.IsOriginal {
+		debug("Returning original image as requested...")
+		return image
+	}
+
 	debug("Processing image...")
-	image = Transform(image, ctx)
+	Transform(&image, ctx)
 
 	debug("Set to cache, key: %s", ctx.CachePath)
 	err = Cache.Set(ctx.CachePath, image)
