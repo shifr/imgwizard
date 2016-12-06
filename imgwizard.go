@@ -595,21 +595,8 @@ func getOrCreateImage(ctx *Context) []byte {
 		}
 	}
 
-	debug("Detecting image type...")
-	iType := http.DetectContentType(image)
-
-	if !stringExists(iType, ResizableImageTypes) {
-		warning("Wizard resize doesn't support image type, returning original image")
-		return image
-	}
-
-	if ctx.IsOriginal {
-		debug("Returning original image as requested...")
-		return image
-	}
-
 	debug("Processing image...")
-	image = image.Transform(image, ctx, iType)
+	image = Transform(image, ctx)
 
 	debug("Set to cache, key: %s", ctx.CachePath)
 	err = Cache.Set(ctx.CachePath, image)
