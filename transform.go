@@ -1,18 +1,14 @@
 package imgwizard
 
 import (
-	"bytes"
-	"image"
-	"image/png"
 	"net/http"
 
-	"github.com/foobaz/lossypng/lossypng"
+	"github.com/shifr/goquant"
 	"github.com/shifr/vips"
 )
 
 func Transform(img_buff *[]byte, ctx *Context) {
 	var err error
-	buf := new(bytes.Buffer)
 
 	debug("Detecting image type...")
 	iType := http.DetectContentType(*img_buff)
@@ -29,18 +25,7 @@ func Transform(img_buff *[]byte, ctx *Context) {
 	}
 
 	if iType == PNG && !ctx.Options.Webp {
-		decoded, _, err := image.Decode(bytes.NewReader(*img_buff))
-		if err != nil {
-			warning("Can't decode PNG image, reason - %s", err)
-		}
-
-		out := lossypng.Compress(decoded, lossypng.NoConversion, 100-ctx.Options.Quality)
-		err = png.Encode(buf, out)
-		if err != nil {
-			warning("Can't encode PNG image, reason - %s", err)
-		}
-
-		*img_buff = buf.Bytes()
+		goquant.Quantize(img_buff)
+		debug("NEW IMAGE SIZE: %d", len(*img_buff))
 	}
-
 }
