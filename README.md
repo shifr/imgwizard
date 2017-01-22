@@ -2,6 +2,9 @@
 
 [![Build Status](https://travis-ci.org/shifr/imgwizard.svg?branch=master)](https://travis-ci.org/shifr/imgwizard)
 
+###Under active development. Please, use latest stable [release][release].###
+[release]: https://github.com/shifr/imgwizard/releases
+
 # What is it? #
 ImgWizard is a small server written in Go as faster alternative for [thumbor][thumbor]
 
