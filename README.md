@@ -79,7 +79,7 @@ VIPS is a free image processing system. Compared to similar libraries, VIPS is f
 
 
 ### Installing imgwizard ###
-  - ```go get github.com/shifr/imgwizard```
+  - ```go get github.com/shifr/imgwizard/cmd/imgwizard```
   - ```export PATH=$PATH:$GOPATH/bin``` if you haven't done it before
   
 ### Running imgwizard ###
