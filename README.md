@@ -14,9 +14,9 @@ ImgWizard is a small server written in Go as faster alternative for [thumbor][th
 
   - Fetch original image from:
       - local file system
-      - remote media storage
-      - microsoft azure
-      - amazon s3
+      - remote media storage (using http)
+      - microsoft azure (using SDK)
+      - amazon s3 (using SDK)
   - Resize it
   - Crop it
   - Change quality 
