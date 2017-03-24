@@ -13,7 +13,7 @@ before_install:
   - sudo apt-get install -y libvips-dev
   - go get -d github.com/shifr/goquant
   - cd $GOPATH/src/github.com/shifr/goquant
-  - ./deb_install.sh
+  - sudo ./deb_install.sh
 
 install:
   - go get github.com/shifr/imgwizard
