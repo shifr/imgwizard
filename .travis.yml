@@ -5,6 +5,7 @@ go:
   #- 1.5
   - 1.6
   - 1.7
+  - 1.8
   
 env:
   - PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/pkgconfig"
